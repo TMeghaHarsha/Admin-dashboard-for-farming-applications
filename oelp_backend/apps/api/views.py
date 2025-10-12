@@ -682,6 +682,64 @@ class ExportPDFView(APIView):
         response["Content-Disposition"] = "attachment; filename=report.pdf"
         return response
 
+class AnalyticsSummaryView(APIView):
+    authentication_classes = [TokenAuthentication]
+
+    def get(self, request):
+        user = request.user
+
+        # Crop distribution by assigned crop on fields
+        crop_counts = (
+            Field.objects.filter(user=user)
+            .values("crop__name")
+            .annotate(cnt=Count("id"))
+            .order_by("-cnt")
+        )
+        crop_distribution = [
+            {"name": (row["crop__name"] or "Unassigned"), "value": row["cnt"]}
+            for row in crop_counts
+        ]
+
+        # Irrigation distribution: prefer explicit method mapping; fallback to practices
+        irrigation_counts = (
+            FieldIrrigationMethod.objects.filter(field__user=user)
+            .values("irrigation_method__name")
+            .annotate(cnt=Count("id"))
+            .order_by("-cnt")
+        )
+        irrigation_distribution = [
+            {"name": (row["irrigation_method__name"] or "Unspecified"), "value": row["cnt"]}
+            for row in irrigation_counts
+        ]
+        if not irrigation_distribution:
+            practice_counts = (
+                FieldIrrigationPractice.objects.filter(field__user=user)
+                .values("irrigation_method__name")
+                .annotate(cnt=Count("id"))
+                .order_by("-cnt")
+            )
+            irrigation_distribution = [
+                {"name": (row["irrigation_method__name"] or "Unspecified"), "value": row["cnt"]}
+                for row in practice_counts
+            ]
+
+        # Lifecycle completion percentage
+        total_lifecycle = CropLifecycleDates.objects.filter(field__user=user).count()
+        completed_lifecycle = (
+            CropLifecycleDates.objects.filter(field__user=user, harvesting_date__isnull=False).count()
+        )
+        lifecycle_completion = int(round((completed_lifecycle / total_lifecycle) * 100)) if total_lifecycle else 0
+
+        has_data = bool(crop_distribution or irrigation_distribution or total_lifecycle)
+
+        return Response(
+            {
+                "has_data": has_data,
+                "lifecycle_completion": lifecycle_completion,
+                "crop_distribution": crop_distribution,
+                "irrigation_distribution": irrigation_distribution,
+            }
+        )
 
 # Import at end to avoid circular reference
 from .serializers import UserSerializer  # noqa: E402
