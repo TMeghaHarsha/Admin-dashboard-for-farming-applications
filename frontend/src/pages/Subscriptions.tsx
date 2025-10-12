@@ -28,6 +28,7 @@ const Subscriptions = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [card, setCard] = useState({ brand: "Visa", last4: "", exp_month: "", exp_year: "" });
+  const [loadingPlan, setLoadingPlan] = useState<number | null>(null);
 
   const load = async () => {
     try {
@@ -52,6 +53,7 @@ const Subscriptions = () => {
 
   const selectPlan = async (planId: number) => {
     try {
+      setLoadingPlan(planId);
       const today = new Date();
       const end = new Date();
       end.setDate(today.getDate() + 30);
@@ -61,7 +63,16 @@ const Subscriptions = () => {
         body: JSON.stringify({ plan: planId, start_date: today.toISOString().slice(0,10), end_date: end.toISOString().slice(0,10), expire_at: end.toISOString() }),
       });
       if (res.ok) { toast.success("Plan selected"); load(); } else { toast.error("Failed to select plan"); }
-    } catch { toast.error("Failed to select plan"); }
+    } catch { toast.error("Failed to select plan"); } finally { setLoadingPlan(null); }
+  };
+
+  const canDowngrade = userPlan && (userPlan.plan_name || "") !== "Free";
+  const handleDowngrade = async () => {
+    if (!userPlan) return;
+    try {
+      const res = await fetch(`${API_URL}/subscriptions/user/${userPlan.id}/downgrade/`, { method: 'POST', headers: authHeaders() });
+      if (res.ok) { toast.success('Downgraded to Free'); load(); } else { toast.error('Failed to downgrade'); }
+    } catch { toast.error('Failed to downgrade'); }
   };
 
   const addPaymentMethod = async () => {
@@ -99,8 +110,8 @@ const Subscriptions = () => {
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
-            <Button disabled>Upgrade Plan</Button>
-            <Button variant="outline" disabled>Downgrade Plan</Button>
+            <Button onClick={() => {}} disabled>Upgrade Plan</Button>
+            <Button variant="outline" onClick={handleDowngrade} disabled={!canDowngrade}>Downgrade Plan</Button>
           </div>
         </CardContent>
       </Card>
@@ -118,12 +129,18 @@ const Subscriptions = () => {
                 <p className="text-3xl font-bold text-primary">${plan.price}<span className="text-sm text-muted-foreground">/{plan.duration}d</span></p>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">Up to 2 features included</p>
+                <div>
+                  <p className="text-sm font-medium mb-1">Features</p>
+                  <ul className="text-sm list-disc ml-5 text-muted-foreground">
+                    {(plan.features || []).map((f: string, idx: number) => (<li key={idx}>{f}</li>))}
+                    {(!plan.features || plan.features.length === 0) && <li>Basic access</li>}
+                  </ul>
+                </div>
                 {userPlan?.plan === plan.id ? (
                   <Button className="w-full" disabled>Current Plan</Button>
                 ) : (
-                  <Button className="w-full" onClick={() => selectPlan(plan.id)}>
-                    Select {plan.name}
+                  <Button className="w-full" onClick={() => selectPlan(plan.id)} disabled={loadingPlan === plan.id}>
+                    {loadingPlan === plan.id ? 'Processing...' : `Select ${plan.name}`}
                   </Button>
                 )}
               </CardContent>

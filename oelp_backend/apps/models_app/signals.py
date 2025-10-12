@@ -47,46 +47,80 @@ def seed_core_data(sender, **kwargs):
         for name, icon in textures:
             SoilTexture.objects.get_or_create(name=name, defaults={"icon": icon})
 
-    # Seed features/types (up to 3 feature types and 5 features)
+    # Seed features/types per requirements (AI, Premium, Basic)
     if "models_app_featuretype" in existing_tables and "models_app_feature" in existing_tables:
         FeatureType = apps.get_model("models_app", "FeatureType")
         Feature = apps.get_model("models_app", "Feature")
         type_map = {}
         for t in [
-            ("Core", "Core application features"),
-            ("Analytics", "Reporting and analysis"),
-            ("Integrations", "External integrations"),
+            ("AI", "AI-powered features"),
+            ("Premium", "Advanced premium capabilities"),
+            ("Basic", "Essential/basic features"),
         ]:
             ft, _ = FeatureType.objects.get_or_create(name=t[0], defaults={"description": t[1]})
             type_map[t[0]] = ft
         for name, tname in [
-            ("Fields", "Core"),
-            ("Crops", "Core"),
-            ("Reports", "Analytics"),
-            ("Soil Analysis", "Analytics"),
-            ("API Access", "Integrations"),
+            ("AI Assistant", "AI"),
+            ("Advanced Analytics", "Premium"),
+            ("Priority Support", "Premium"),
+            ("Basic Reports", "Basic"),
+            ("Unlimited Fields", "Premium"),
         ]:
             Feature.objects.get_or_create(name=name, defaults={"feature_type": type_map[tname]})
 
-    # Seed unified plans and link features (max 2 per plan)
+    # Seed plans per requirements and attach features
     if "models_app_plan" in existing_tables and "models_app_planfeature" in existing_tables:
         Plan = apps.get_model("models_app", "Plan")
         PlanFeature = apps.get_model("models_app", "PlanFeature")
         Feature = apps.get_model("models_app", "Feature")
         plans = [
-            ("Free", "main", 0, 36500),
-            ("Pro", "main", 29, 30),
-            ("Enterprise", "enterprise", 129, 30),
+            ("Free", "main", 0, 36500, ["Basic Reports"]),
+            ("MainPlan", "main", 19, 30, ["Basic Reports", "Advanced Analytics"]),
+            ("TopUpPlan", "topup", 9, 30, ["AI Assistant"]),
+            ("EnterprisePlan", "enterprise", 129, 30, ["AI Assistant", "Advanced Analytics", "Priority Support", "Unlimited Fields"]),
         ]
-        for name, ptype, price, duration in plans:
-            plan, _ = Plan.objects.get_or_create(
+        for name, ptype, price, duration, feats in plans:
+            plan, created = Plan.objects.get_or_create(
                 name=name,
                 defaults={"type": ptype, "price": price, "duration": duration},
             )
-            # Attach up to 2 features
-            feats = list(Feature.objects.all()[:2])
-            for f in feats:
-                PlanFeature.objects.get_or_create(plan=plan, feature=f, defaults={"max_count": 1000, "duration_days": duration})
+            if not created:
+                # Ensure attributes are aligned with requirements on existing rows
+                updated = False
+                if plan.type != ptype:
+                    plan.type = ptype
+                    updated = True
+                if plan.price != price or plan.duration != duration:
+                    plan.price = price
+                    plan.duration = duration
+                    updated = True
+                if updated:
+                    plan.save(update_fields=["type", "price", "duration"])
+            for fname in feats:
+                try:
+                    f = Feature.objects.get(name=fname)
+                    PlanFeature.objects.get_or_create(plan=plan, feature=f, defaults={"max_count": 1000, "duration_days": duration})
+                except Feature.DoesNotExist:
+                    continue
+
+    # Seed common crops and predefined varieties
+    if "models_app_crop" in existing_tables and "models_app_cropvariety" in existing_tables:
+        Crop = apps.get_model("models_app", "Crop")
+        CropVariety = apps.get_model("models_app", "CropVariety")
+        seed = {
+            "Wheat": ["Durum", "Hard Red", "Soft White"],
+            "Corn": ["Dent", "Flint", "Sweet"],
+            "Rice": ["Basmati", "Jasmine", "Arborio"],
+            "Tomato": ["Roma", "Beefsteak", "Cherry"],
+            "Soybean": ["Glycine Max A", "Glycine Max B", "Glycine Max C"],
+        }
+        for crop_name, varieties in seed.items():
+            crop, _ = Crop.objects.get_or_create(name=crop_name)
+            for i, vname in enumerate(varieties):
+                obj, _ = CropVariety.objects.get_or_create(crop=crop, name=vname, defaults={"is_primary": i == 0})
+                if i == 0 and not obj.is_primary:
+                    obj.is_primary = True
+                    obj.save(update_fields=["is_primary"])
 
 
 # Basic activity logging for Field and SoilReport changes

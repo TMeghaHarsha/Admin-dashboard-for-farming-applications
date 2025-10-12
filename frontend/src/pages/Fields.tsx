@@ -23,6 +23,7 @@ const Fields = () => {
   const [crops, setCrops] = useState<any[]>([]);
   const [varieties, setVarieties] = useState<any[]>([]);
   const [openFieldDialog, setOpenFieldDialog] = useState(false);
+  const [openFarmDialog, setOpenFarmDialog] = useState(false);
   const [openIrrigationDialog, setOpenIrrigationDialog] = useState(false);
   const [openSoilReportDialog, setOpenSoilReportDialog] = useState(false);
   const [openSoilAnalysisDialog, setOpenSoilAnalysisDialog] = useState(false);
@@ -75,9 +76,9 @@ const Fields = () => {
   }, []);
 
   const stats = [
-    { title: "Total Fields", value: String(fields.length || 0), subtitle: `${0} acres total`, icon: MapIcon },
-    { title: "Irrigation Systems", value: "0", subtitle: "0 types in use", icon: Droplets },
-    { title: "Soil Reports", value: "0", subtitle: "—", icon: FileText },
+    { title: "Total Fields", value: String(fields.length || 0), subtitle: `${Math.round((fields || []).reduce((a:number,f:any)=>a + (Number(f?.area?.hectares)||0), 0) * 2.47105)} acres total`, icon: MapIcon },
+    { title: "Irrigation Systems", value: String(irrigationMethods.length || 0), subtitle: `${irrigationMethods.length || 0} types in use`, icon: Droplets },
+    { title: "Soil Reports", value: "—", subtitle: "View in Soil Analysis", icon: FileText },
   ];
 
   const filteredFields = useMemo(() => {
@@ -103,10 +104,16 @@ const Fields = () => {
           <h1 className="text-3xl font-bold">Fields Management</h1>
           <p className="text-muted-foreground">Manage your farmland, soil reports, and irrigation systems</p>
         </div>
+        <div className="flex gap-2">
+        <Button onClick={() => setOpenFarmDialog(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Farm
+        </Button>
         <Button onClick={() => { setEditingField(null); setFormField({ name: "", farm: "", crop: "", crop_variety: "", device: "", location_name: "", soil_type: "", is_active: true }); setImageFile(null); setOpenFieldDialog(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           Add Field
         </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -212,7 +219,13 @@ const Fields = () => {
               <Droplets className="mr-2 h-4 w-4" />
               Set Irrigation Method
             </Button>
-            <Button variant="outline" className="w-full">
+            <Button variant="outline" className="w-full" onClick={async () => {
+              if (!fields.length) { toast.error('Add a field first'); return; }
+              const fieldId = fields[0].id; // simple demo selection; could open dialog
+              const now = new Date().toISOString();
+              const res = await fetch(`${API_URL}/irrigation-practices/`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ field: fieldId, irrigation_method: irrigationMethods[0]?.id || 1, notes: `Scheduled at ${now}` }) });
+              if (res.ok) { toast.success('Irrigation scheduled'); loadData(); } else { toast.error('Failed to schedule'); }
+            }}>
               <Droplets className="mr-2 h-4 w-4" />
               Schedule Irrigation
             </Button>
@@ -407,6 +420,31 @@ const Fields = () => {
         fields={fields}
         authHeaders={authHeaders}
       />
+
+      {/* Add Farm Dialog */}
+      <Dialog open={openFarmDialog} onOpenChange={setOpenFarmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Farm</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Farm Name</Label>
+              <Input value={(formField as any)._farmName || ""} onChange={(e) => setFormField({ ...formField, _farmName: e.target.value } as any)} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOpenFarmDialog(false)}>Cancel</Button>
+              <Button onClick={async () => {
+                const nm = (formField as any)._farmName || "";
+                if (!nm.trim()) { toast.error('Enter a name'); return; }
+                const res = await fetch(`${API_URL}/farms/`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ name: nm.trim() }) });
+                if (res.ok) { toast.success('Farm added'); setOpenFarmDialog(false); setFormField({ ...formField, _farmName: undefined } as any); loadData(); }
+                else { toast.error('Failed to add farm'); }
+              }}>Create</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

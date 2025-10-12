@@ -184,9 +184,20 @@ class FeatureSerializer(serializers.ModelSerializer):
 
 
 class PlanSerializer(serializers.ModelSerializer):
+    features = serializers.SerializerMethodField()
+
     class Meta:
         model = Plan
-        fields = ("id", "name", "type", "price", "duration")
+        fields = ("id", "name", "type", "price", "duration", "features")
+
+    def get_features(self, obj):
+        items = []
+        try:
+            for pf in obj.plan_features.select_related("feature").all():
+                items.append(pf.feature.name)
+        except Exception:
+            pass
+        return items
 
 
 class UserPlanSerializer(serializers.ModelSerializer):

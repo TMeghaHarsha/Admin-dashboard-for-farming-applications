@@ -97,7 +97,7 @@ const Dashboard = () => {
                 <CardTitle>Recent Activity</CardTitle>
                 <CardDescription>Latest updates</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/practices')}>View All</Button>
+              <Button variant="ghost" size="sm">View All</Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -132,7 +132,7 @@ const Dashboard = () => {
               <Upload className="h-5 w-5" />
               <span>Generate Soil Report</span>
             </Button>
-            <Button variant="outline" className="h-24 flex-col gap-2">
+            <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/reports')}>
               <BarChart className="h-5 w-5" />
               <span>View Analytics</span>
             </Button>
