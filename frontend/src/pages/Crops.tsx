@@ -34,6 +34,8 @@ const Crops = () => {
   const [formVariety, setFormVariety] = useState({ crop: "", name: "", is_primary: false });
   const [fields, setFields] = useState<any[]>([]);
   const [lifecycle, setLifecycle] = useState({ field: "", sowing_date: "", growth_start_date: "", flowering_date: "", harvesting_date: "", yield_amount: "" });
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filter, setFilter] = useState({ has_variety: "", crop_id: "" });
 
   const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
 
@@ -88,9 +90,13 @@ const Crops = () => {
   };
 
   const filteredCrops = useMemo(() => {
-    if (!searchQuery) return crops;
-    return crops.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [searchQuery, crops]);
+    let list = crops;
+    if (filter.crop_id) list = list.filter((c) => String(c.id) === String(filter.crop_id));
+    if (filter.has_variety === "yes") list = list.filter((c) => varieties.some((v) => v.crop === c.id));
+    if (filter.has_variety === "no") list = list.filter((c) => !varieties.some((v) => v.crop === c.id));
+    if (searchQuery) list = list.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return list;
+  }, [searchQuery, crops, varieties, filter]);
 
   const handleOpenNewCrop = () => {
     setEditingCrop(null);
@@ -248,6 +254,24 @@ const Crops = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button variant="outline" onClick={() => setFilterOpen((v) => !v)}>Filter</Button>
+            {filterOpen && (
+              <div className="flex gap-2 items-center text-sm">
+                <label>Has Variety</label>
+                <select className="border rounded h-9 px-2" value={filter.has_variety} onChange={(e) => setFilter({ ...filter, has_variety: e.target.value })}>
+                  <option value="">Any</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+                <label>Crop</label>
+                <select className="border rounded h-9 px-2" value={filter.crop_id} onChange={(e) => setFilter({ ...filter, crop_id: e.target.value })}>
+                  <option value="">All</option>
+                  {crops.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                </select>
+              </div>
+            )}
           </div>
         </CardHeader>
       </Card>
@@ -419,7 +443,47 @@ const Crops = () => {
             </div>
             <div className="space-y-2">
               <Label>Name</Label>
-              <Input value={formVariety.name} onChange={(e) => setFormVariety({ ...formVariety, name: e.target.value })} />
+              <select className="border rounded-md h-10 px-3 w-full" value={formVariety.name} onChange={(e) => setFormVariety({ ...formVariety, name: e.target.value })}>
+                <option value="" disabled>Select variety</option>
+                {/* Predefined varieties for popular crops */}
+                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Wheat')?.id) && (
+                  <>
+                    <option value="Durum">Durum</option>
+                    <option value="Hard Red">Hard Red</option>
+                    <option value="Soft White">Soft White</option>
+                  </>
+                )}
+                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Corn')?.id) && (
+                  <>
+                    <option value="Dent">Dent</option>
+                    <option value="Flint">Flint</option>
+                    <option value="Sweet">Sweet</option>
+                  </>
+                )}
+                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Rice')?.id) && (
+                  <>
+                    <option value="Basmati">Basmati</option>
+                    <option value="Jasmine">Jasmine</option>
+                    <option value="Arborio">Arborio</option>
+                  </>
+                )}
+                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Tomato')?.id) && (
+                  <>
+                    <option value="Roma">Roma</option>
+                    <option value="Beefsteak">Beefsteak</option>
+                    <option value="Cherry">Cherry</option>
+                  </>
+                )}
+                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Soybean')?.id) && (
+                  <>
+                    <option value="Glycine Max A">Glycine Max A</option>
+                    <option value="Glycine Max B">Glycine Max B</option>
+                    <option value="Glycine Max C">Glycine Max C</option>
+                  </>
+                )}
+                {/* Fallback free text */}
+                <option value={formVariety.name || 'Custom'}>{formVariety.name ? `Use: ${formVariety.name}` : 'Custom...'}</option>
+              </select>
             </div>
             <div className="flex items-center gap-2">
               <input

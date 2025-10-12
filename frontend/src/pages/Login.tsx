@@ -11,6 +11,8 @@ import { toast } from "sonner";
 const Login = () => {
   const navigate = useNavigate();
   const [loginData, setLoginData] = useState({ username: "", password: "" });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [reset, setReset] = useState({ username: "", new_password: "", confirm_password: "" });
   const [signupData, setSignupData] = useState({
     username: "",
     full_name: "",
@@ -138,6 +140,9 @@ const Login = () => {
                       onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
                     />
                   </div>
+                  <div className="flex justify-end">
+                    <button type="button" className="text-xs underline" onClick={() => setResetOpen(true)}>Forgot Password?</button>
+                  </div>
                 </div>
                 <Button type="submit" className="w-full">
                   Sign In
@@ -234,6 +239,37 @@ const Login = () => {
           </Tabs>
         </CardContent>
       </Card>
+      {resetOpen && (
+        <div className="fixed inset-0">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setResetOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-background p-6 shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Reset Password</h3>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input value={reset.username} onChange={(e) => setReset({ ...reset, username: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>New Password</Label>
+                <Input type="password" value={reset.new_password} onChange={(e) => setReset({ ...reset, new_password: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Confirm New Password</Label>
+                <Input type="password" value={reset.confirm_password} onChange={(e) => setReset({ ...reset, confirm_password: e.target.value })} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setResetOpen(false)}>Cancel</Button>
+                <Button onClick={async () => {
+                  if (!reset.username || !reset.new_password || !reset.confirm_password) { toast.error("Fill all fields"); return; }
+                  if (reset.new_password !== reset.confirm_password) { toast.error("Passwords do not match"); return; }
+                  const res = await fetch(`${API_URL}/auth/password/reset/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reset) });
+                  if (res.ok) { toast.success("Password reset. Please sign in."); setResetOpen(false); } else { const err = await res.json().catch(() => ({})); toast.error(err.detail || 'Failed to reset'); }
+                }}>Reset</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

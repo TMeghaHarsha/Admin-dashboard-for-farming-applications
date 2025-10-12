@@ -34,7 +34,6 @@ const Settings = () => {
   }, []);
 
   const [password, setPassword] = useState({
-    current: "",
     new: "",
     confirm: "",
   });
@@ -69,7 +68,7 @@ const Settings = () => {
   };
 
   const handleChangePassword = () => {
-    if (!password.current || !password.new || !password.confirm) {
+    if (!password.new || !password.confirm) {
       toast.error("Please fill in all password fields");
       return;
     }
@@ -81,17 +80,17 @@ const Settings = () => {
       toast.error("Password must be at least 8 characters");
       return;
     }
-    fetch(`${API_URL}/auth/change-password/`, {
+    fetch(`${API_URL}/auth/password/reset/`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ current_password: password.current, new_password: password.new }),
+      body: JSON.stringify({ new_password: password.new, confirm_password: password.confirm }),
     }).then(async (r) => {
       if (r.ok) {
-        toast.success("Password changed successfully!");
-        setPassword({ current: "", new: "", confirm: "" });
+        toast.success("Password updated");
+        setPassword({ new: "", confirm: "" });
       } else {
         const err = await r.json().catch(() => ({}));
-        toast.error(err.detail || "Failed to change password");
+        toast.error(err.detail || "Failed to update password");
       }
     });
   };
@@ -147,16 +146,10 @@ const Settings = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="currentPassword">Current Password</Label>
-            <Input
-              id="currentPassword"
-              type="password"
-              value={password.current}
-              onChange={(e) => setPassword({ ...password, current: e.target.value })}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="newPassword">New Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="newPassword">New Password</Label>
+              <span className="text-xs text-muted-foreground">Forgot Password? Use this reset.</span>
+            </div>
             <Input
               id="newPassword"
               type="password"
@@ -173,7 +166,7 @@ const Settings = () => {
               onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
             />
           </div>
-          <Button onClick={handleChangePassword}>Change Password</Button>
+          <Button onClick={handleChangePassword}>Reset Password</Button>
         </CardContent>
       </Card>
 
