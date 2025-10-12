@@ -31,6 +31,7 @@ urlpatterns = [
     path("auth/login/", views.LoginView.as_view(), name="login"),
     path("auth/logout/", views.LogoutView.as_view(), name="logout"),
     path("auth/password/suggest/", views.SuggestPasswordView.as_view(), name="suggest-password"),
+    path("auth/password/reset/", views.ResetPasswordView.as_view(), name="reset-password"),
     path("auth/me/", views.MeView.as_view(), name="me"),
     path("auth/change-password/", views.ChangePasswordView.as_view(), name="change-password"),
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
@@ -39,6 +40,7 @@ urlpatterns = [
     path("subscriptions/razorpay/webhook/", views.RazorpayWebhookView.as_view(), name="razorpay-webhook"),
     path("reports/export/csv/", views.ExportCSVView.as_view(), name="export-csv"),
     path("reports/export/pdf/", views.ExportPDFView.as_view(), name="export-pdf"),
+    path("analytics/summary/", views.AnalyticsSummaryView.as_view(), name="analytics-summary"),
     path("", include(router.urls)),
 ]
 

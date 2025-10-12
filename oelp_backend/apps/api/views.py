@@ -9,7 +9,7 @@ razorpay = None  # type: ignore
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Count
+from django.db.models import Count, F
 from django.http import HttpResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -144,6 +144,18 @@ class ChangePasswordView(APIView):
         password_validation.validate_password(new_password, user)
         user.set_password(new_password)
         user.save(update_fields=["password"])
+        # Record activity in recent activity log
+        try:
+            ct = ContentType.objects.get_for_model(user.__class__)
+            UserActivity.objects.create(
+                user=user,
+                action="update",
+                content_type=ct,
+                object_id=user.pk,
+                description="Password changed",
+            )
+        except Exception:
+            pass
         return Response({"detail": "Password changed successfully"})
 
 
@@ -154,6 +166,53 @@ class SuggestPasswordView(APIView):
     def get(self, request):
         pw = secrets.token_urlsafe(12)
         return Response({"password": pw})
+
+
+class ResetPasswordView(APIView):
+    """Allow resetting password without current password.
+
+    If authenticated, reset for the current user.
+    If unauthenticated, requires a valid username to identify the account.
+    """
+    authentication_classes: list = []
+    permission_classes: list = []
+
+    def post(self, request):
+        username = request.data.get("username")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+        if not new_password or not confirm_password:
+            return Response({"detail": "new_password and confirm_password are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != confirm_password:
+            return Response({"detail": "Passwords do not match"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve user: prefer authenticated token if present; else username
+        user: CustomUser | None = None
+        try:
+            auth_header = request.headers.get("Authorization") or ""
+            if auth_header.startswith("Token "):
+                token_value = auth_header.split(" ", 1)[1]
+                token_obj = UserAuthToken.objects.filter(access_token=token_value).select_related("user").first()
+                if token_obj:
+                    user = token_obj.user
+        except Exception:
+            user = None
+        if user is None and username:
+            user = CustomUser.objects.filter(username=username).first()
+        if user is None:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.contrib.auth import password_validation
+        password_validation.validate_password(new_password, user)
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        # Record activity
+        try:
+            ct = ContentType.objects.get_for_model(user.__class__)
+            UserActivity.objects.create(user=user, action="update", content_type=ct, object_id=user.pk, description="Password reset")
+        except Exception:
+            pass
+        return Response({"detail": "Password reset successfully"})
 
 
 class DashboardView(APIView):
@@ -513,9 +572,26 @@ class RazorpayWebhookView(APIView):
 
 
 class ExportCSVView(APIView):
-    authentication_classes = [TokenAuthentication]
+    # Accept token via header or query param; handle auth manually to support new-tab downloads
+    authentication_classes: list = []
 
     def get(self, request):
+        # Resolve user from Authorization header (Token ...) or token query param
+        resolved_user: CustomUser | None = None
+        try:
+            auth_header = request.headers.get("Authorization") or ""
+            token_value = None
+            if auth_header.startswith("Token "):
+                token_value = auth_header.split(" ", 1)[1]
+            token_value = token_value or request.query_params.get("token") or request.query_params.get("access_token")
+            if token_value:
+                tok = UserAuthToken.objects.filter(access_token=token_value).select_related("user").first()
+                if tok:
+                    resolved_user = tok.user
+        except Exception:
+            resolved_user = None
+        if resolved_user is None:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         # Optional date filters (YYYY-MM-DD)
         start_date_str = request.query_params.get("start_date")
         end_date_str = request.query_params.get("end_date")
@@ -533,7 +609,7 @@ class ExportCSVView(APIView):
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(["Field", "Crop", "Hectares"])
-        queryset = Field.objects.filter(user=request.user)
+        queryset = Field.objects.filter(user=resolved_user)
         if field_id:
             queryset = queryset.filter(pk=field_id)
         if start_date:
@@ -550,9 +626,26 @@ class ExportCSVView(APIView):
 
 
 class ExportPDFView(APIView):
-    authentication_classes = [TokenAuthentication]
+    # Accept token via header or query param; handle auth manually to support new-tab downloads
+    authentication_classes: list = []
 
     def get(self, request):
+        # Resolve user from Authorization header (Token ...) or token query param
+        resolved_user: CustomUser | None = None
+        try:
+            auth_header = request.headers.get("Authorization") or ""
+            token_value = None
+            if auth_header.startswith("Token "):
+                token_value = auth_header.split(" ", 1)[1]
+            token_value = token_value or request.query_params.get("token") or request.query_params.get("access_token")
+            if token_value:
+                tok = UserAuthToken.objects.filter(access_token=token_value).select_related("user").first()
+                if tok:
+                    resolved_user = tok.user
+        except Exception:
+            resolved_user = None
+        if resolved_user is None:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         # Minimal PDF export with optional date filter
         start_date_str = request.query_params.get("start_date")
         end_date_str = request.query_params.get("end_date")
@@ -572,7 +665,7 @@ class ExportPDFView(APIView):
         p = canvas.Canvas(buffer)
         p.drawString(100, 800, "OELP Report")
         y = 760
-        queryset = Field.objects.filter(user=request.user)
+        queryset = Field.objects.filter(user=resolved_user)
         if field_id:
             queryset = queryset.filter(pk=field_id)
         if start_date:

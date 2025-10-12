@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, FileDown, TrendingUp } from "lucide-react";
@@ -18,9 +18,10 @@ const Reports = () => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const authHeaders = token ? { Authorization: `Token ${token}` } : {};
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [analytics, setAnalytics] = useState<any | null>(null);
   const stats = [
-    { title: "Total Yield", value: "0", change: "" },
-    { title: "Active Reports", value: "0", subtitle: "" },
+    { title: "Lifecycle Completion", value: analytics ? `${analytics.lifecycle_completion}%` : "0%", change: "" },
+    { title: "Active Reports", value: analytics && analytics.has_data ? String((analytics.crop_distribution || []).reduce((a:number,b:any)=>a+b.value,0)) : "0", subtitle: "" },
   ];
 
   const cropHealth = [
@@ -58,6 +59,17 @@ const Reports = () => {
 
   const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
 
+  useEffect(() => {
+    const fetchIt = async () => {
+      try {
+        const res = await fetch(`${API_URL}/analytics/summary/`, { headers: authHeaders });
+        const data = await res.json();
+        if (res.ok) setAnalytics(data);
+      } catch {}
+    };
+    fetchIt();
+  }, []);
+
   const getHealthColor = (health: string) => {
     switch (health) {
       case "Excellent": return "default";
@@ -89,7 +101,7 @@ const Reports = () => {
               const qs = new URLSearchParams();
               if (dateRange.start) qs.set('start_date', dateRange.start);
               if (dateRange.end) qs.set('end_date', dateRange.end);
-              window.open(`${API_URL}/reports/export/csv/?${qs.toString()}`, '_blank');
+              window.open(`${API_URL}/reports/export/csv/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
             }}
           >
             <Download className="mr-2 h-4 w-4" />
@@ -100,7 +112,7 @@ const Reports = () => {
               const qs = new URLSearchParams();
               if (dateRange.start) qs.set('start_date', dateRange.start);
               if (dateRange.end) qs.set('end_date', dateRange.end);
-              window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}`, '_blank');
+              window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
             }}
           >
             <Download className="mr-2 h-4 w-4" />
@@ -124,7 +136,47 @@ const Reports = () => {
         ))}
       </div>
 
-      {/* Analytics cards intentionally removed per requirements */}
+      {(!analytics || !analytics.has_data) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>No analytics yet</CardTitle>
+            <CardDescription>Add crops and fields to see insights.</CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+      {analytics && analytics.has_data && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle>Crop Distribution</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={analytics.crop_distribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                    {(analytics.crop_distribution || []).map((_: any, idx: number) => (
+                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Irrigation by Method</CardHeader></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={analytics.irrigation_distribution}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill={COLORS[0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Health and productivity sections removed per requirements */}
     </div>
