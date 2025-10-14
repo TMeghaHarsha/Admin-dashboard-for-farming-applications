@@ -14,7 +14,7 @@ from apps.models_app.notifications import Notification, SupportRequest
 from apps.models_app.plan import Plan
 from apps.models_app.soil_report import SoilTexture, SoilReport
 from apps.models_app.token import UserAuthToken
-from apps.models_app.user import CustomUser
+from apps.models_app.user import CustomUser, Role, UserRole
 from apps.models_app.models import UserActivity
 from apps.models_app.user_plan import (
     UserPlan,
@@ -25,9 +25,41 @@ from apps.models_app.user_plan import (
 
 
 class UserSerializer(serializers.ModelSerializer):
+    roles = serializers.SerializerMethodField()
+
     class Meta:
         model = CustomUser
-        fields = ("id", "email", "username", "full_name", "phone_number", "avatar", "date_joined")
+        fields = (
+            "id",
+            "email",
+            "username",
+            "full_name",
+            "phone_number",
+            "avatar",
+            "date_joined",
+            "roles",
+        )
+
+    def get_roles(self, obj):
+        try:
+            return list(obj.user_roles.select_related("role").values_list("role__name", flat=True))
+        except Exception:
+            return []
+
+
+class RoleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = ("id", "name", "description")
+
+
+class UserRoleSerializer(serializers.ModelSerializer):
+    user_username = serializers.CharField(source="user.username", read_only=True)
+    role_name = serializers.CharField(source="role.name", read_only=True)
+
+    class Meta:
+        model = UserRole
+        fields = ("id", "user", "user_username", "role", "role_name", "userrole_id", "assigned_at")
 
 
 class SignUpSerializer(serializers.ModelSerializer):
@@ -242,8 +274,20 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
 
 class TransactionSerializer(serializers.ModelSerializer):
     plan_name = serializers.CharField(source="plan.name", read_only=True)
+    user_username = serializers.CharField(source="user.username", read_only=True)
 
     class Meta:
         model = Transaction
-        fields = ("id", "plan", "plan_name", "amount", "currency", "status", "invoice_pdf", "created_at")
+        fields = (
+            "id",
+            "user",
+            "user_username",
+            "plan",
+            "plan_name",
+            "amount",
+            "currency",
+            "status",
+            "invoice_pdf",
+            "created_at",
+        )
 
