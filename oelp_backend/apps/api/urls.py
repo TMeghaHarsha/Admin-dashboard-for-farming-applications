@@ -24,6 +24,10 @@ router.register(r"feature-types", views.FeatureTypeViewSet, basename="feature-ty
 router.register(r"plans", views.PlanViewSet, basename="plan")
 router.register(r"payment-methods", views.PaymentMethodViewSet, basename="payment-method")
 router.register(r"transactions", views.TransactionViewSet, basename="transaction")
+router.register(r"admin/users", views.AdminUsersViewSet, basename="admin-users")
+router.register(r"admin/roles", views.AdminRolesViewSet, basename="admin-roles")
+router.register(r"admin/notifications", views.AdminNotificationsViewSet, basename="admin-notifications")
+router.register(r"admin/fields", views.AdminFieldViewSet, basename="admin-fields")
 
 urlpatterns = [
     path("", lambda r: JsonResponse({"status": "ok"})),
@@ -41,6 +45,8 @@ urlpatterns = [
     path("reports/export/csv/", views.ExportCSVView.as_view(), name="export-csv"),
     path("reports/export/pdf/", views.ExportPDFView.as_view(), name="export-pdf"),
     path("analytics/summary/", views.AnalyticsSummaryView.as_view(), name="analytics-summary"),
+    path("admin/analytics/", views.AdminAnalyticsView.as_view(), name="admin-analytics"),
+    path("auth/ensure-role/", views.EnsureRoleView.as_view(), name="ensure-role"),
     path("", include(router.urls)),
 ]
 

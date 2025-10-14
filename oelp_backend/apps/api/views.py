@@ -20,10 +20,11 @@ from apps.models_app.token import UserAuthToken
 from apps.models_app.user import CustomUser, Role, UserRole
 
 from .auth import TokenAuthentication
-from .permissions import IsOwnerOrReadOnly
+from .permissions import IsOwnerOrReadOnly, HasRole
 from .serializers import (
     AssetSerializer,
     ActivitySerializer,
+    RoleSerializer,
     CropSerializer,
     CropVarietySerializer,
     DeviceSerializer,
@@ -284,6 +285,109 @@ class MenuView(APIView):
             {"key": "settings", "label": "Settings"},
         ]
         return Response(base_items)
+
+
+class AdminUsersViewSet(viewsets.ModelViewSet):
+    """Admin: manage users and assign roles."""
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Development"]
+
+    def get_queryset(self):
+        return CustomUser.objects.all().order_by("-date_joined")
+
+    def get_serializer_class(self):  # defer import to avoid circular timing
+        from .serializers import UserSerializer as _UserSerializer
+
+        return _UserSerializer
+
+    @action(detail=True, methods=["post"], url_path="assign-role")
+    def assign_role(self, request, pk=None):
+        user = self.get_object()
+        role_name = request.data.get("role")
+        if not role_name:
+            return Response({"detail": "role is required"}, status=status.HTTP_400_BAD_REQUEST)
+        role, _ = Role.objects.get_or_create(name=role_name)
+        UserRole.objects.get_or_create(
+            user=user, role=role, defaults={"userrole_id": user.email or user.username}
+        )
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
+
+
+class AdminRolesViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Business", "Development"]
+    queryset = Role.objects.all().order_by("name")
+    serializer_class = RoleSerializer
+
+
+class AdminNotificationsViewSet(viewsets.ModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Support", "Business", "Development"]
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        return (
+            Notification.objects.all()
+            .select_related("receiver", "sender")
+            .order_by("-created_at")
+        )
+
+    def perform_create(self, serializer):
+        receiver_id = self.request.data.get("receiver")
+        receiver = None
+        if receiver_id:
+            receiver = CustomUser.objects.filter(pk=receiver_id).first()
+        serializer.save(sender=self.request.user, receiver=receiver or self.request.user)
+
+
+class AdminFieldViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Agronomist", "Business", "Development"]
+    queryset = Field.objects.select_related("user", "farm", "crop", "crop_variety", "soil_type")
+    serializer_class = FieldSerializer
+
+
+class AdminAnalyticsView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Development"]
+
+    def get(self, request):
+        total_users = CustomUser.objects.count()
+        total_fields = Field.objects.count()
+        total_plans = Plan.objects.count()
+        active_subscriptions = UserPlan.objects.filter(is_active=True).count()
+        return Response(
+            {
+                "total_users": total_users,
+                "total_fields": total_fields,
+                "total_plans": total_plans,
+                "active_subscriptions": active_subscriptions,
+            }
+        )
+
+
+class EnsureRoleView(APIView):
+    authentication_classes = [TokenAuthentication]
+
+    def post(self, request):
+        role_name = request.data.get("role")
+        if not role_name:
+            return Response({"detail": "role is required"}, status=status.HTTP_400_BAD_REQUEST)
+        role, _ = Role.objects.get_or_create(name=role_name)
+        UserRole.objects.get_or_create(
+            user=request.user, role=role, defaults={"userrole_id": request.user.email or request.user.username}
+        )
+        roles = list(
+            request.user.user_roles.select_related("role").values_list("role__name", flat=True)
+        )
+        return Response({"roles": roles})
 
 
 class CropViewSet(viewsets.ModelViewSet):
