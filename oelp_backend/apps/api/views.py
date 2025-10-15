@@ -308,6 +308,26 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         role_name = request.data.get("role")
         if not role_name:
             return Response({"detail": "role is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Determine acting user's roles
+        try:
+            actor_roles = set(
+                request.user.user_roles.select_related("role").values_list("role__name", flat=True)
+            )
+        except Exception:
+            actor_roles = set()
+
+        # SuperAdmin (or Django superuser) can assign any role
+        is_super_admin = request.user.is_superuser or ("SuperAdmin" in actor_roles)
+        if not is_super_admin:
+            # Admins can assign non-end-user, non-admin, non-superadmin roles only
+            if "Admin" in actor_roles:
+                disallowed = {"SuperAdmin", "Admin", "End-App-User"}
+                if role_name in disallowed:
+                    return Response({"detail": "Admins cannot assign this role"}, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({"detail": "Only SuperAdmin or Admin can assign roles"}, status=status.HTTP_403_FORBIDDEN)
+
         role, _ = Role.objects.get_or_create(name=role_name)
         UserRole.objects.get_or_create(
             user=user, role=role, defaults={"userrole_id": user.email or user.username}
@@ -380,6 +400,18 @@ class EnsureRoleView(APIView):
         role_name = request.data.get("role")
         if not role_name:
             return Response({"detail": "role is required"}, status=status.HTTP_400_BAD_REQUEST)
+        # Only allow all users to ensure the default end-user role for themselves.
+        # Elevating to privileged roles requires SuperAdmin (or Django superuser).
+        try:
+            user_roles = set(
+                request.user.user_roles.select_related("role").values_list("role__name", flat=True)
+            )
+        except Exception:
+            user_roles = set()
+        if role_name != "End-App-User":
+            is_super_admin = request.user.is_superuser or ("SuperAdmin" in user_roles)
+            if not is_super_admin:
+                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         role, _ = Role.objects.get_or_create(name=role_name)
         UserRole.objects.get_or_create(
             user=request.user, role=role, defaults={"userrole_id": request.user.email or request.user.username}
@@ -517,7 +549,7 @@ class AssetViewSet(viewsets.ModelViewSet):
     serializer_class = AssetSerializer
 
 
-class NotificationViewSet(viewsets.ModelViewSet):
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     authentication_classes = [TokenAuthentication]
     serializer_class = NotificationSerializer
 
