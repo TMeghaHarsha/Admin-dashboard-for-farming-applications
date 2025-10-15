@@ -40,7 +40,8 @@ const Login = () => {
       const data = await res.json();
       if (data.token) localStorage.setItem("token", data.token);
       toast.success("Welcome back!");
-      navigate("/dashboard");
+      // Decide default redirect based on roles fetched lazily by RootRedirect
+      navigate("/");
     } else {
       toast.error("Invalid credentials");
     }
@@ -80,7 +81,7 @@ const Login = () => {
         const data = await res.json();
         if (data.token) localStorage.setItem("token", data.token);
         toast.success("Account created! Redirecting...");
-        setTimeout(() => navigate("/dashboard"), 800);
+        setTimeout(() => navigate("/"), 800);
       } else {
         const err = await res.json().catch(() => ({}));
         const firstFieldError = err?.username?.[0] || err?.full_name?.[0] || err?.password?.[0] || err?.phone_number?.[0];

@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -82,19 +82,25 @@ export default function AdminNotifications() {
       <Card>
         <CardHeader>
           <CardTitle>All Notifications</CardTitle>
+          <CardDescription>Messages you send will appear here.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {items.map((n) => (
-              <div key={n.id} className="flex gap-4 p-4 rounded-lg border">
-                <div className="flex-1 space-y-1">
-                  <p className="font-semibold text-foreground">{n.message}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</p>
+          {items.length === 0 && (
+            <p className="text-sm text-muted-foreground">No notifications yet.</p>
+          )}
+          {items.length > 0 && (
+            <div className="space-y-4">
+              {items.map((n) => (
+                <div key={n.id} className="flex gap-4 p-4 rounded-lg border">
+                  <div className="flex-1 space-y-1">
+                    <p className="font-semibold text-foreground">{n.message}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</p>
+                  </div>
+                  <Badge variant={n.is_read ? "secondary" : "default"}>{n.is_read ? "Read" : "Unread"}</Badge>
                 </div>
-                <Badge variant={n.is_read ? "secondary" : "default"}>{n.is_read ? "Read" : "Unread"}</Badge>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

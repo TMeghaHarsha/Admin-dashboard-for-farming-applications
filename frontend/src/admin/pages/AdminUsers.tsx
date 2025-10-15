@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -116,34 +116,40 @@ export default function AdminUsers() {
       <Card>
         <CardHeader>
           <CardTitle>All Users</CardTitle>
+          <CardDescription>Users will appear here after creation.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Full Name</TableHead>
-                  <TableHead>Roles</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.username}</TableCell>
-                    <TableCell>{u.email}</TableCell>
-                    <TableCell>{u.full_name}</TableCell>
-                    <TableCell>
-                      {(u.roles || []).map((r) => (
-                        <Badge key={r} variant="secondary" className="mr-1">{r}</Badge>
-                      ))}
-                    </TableCell>
+          {users.length === 0 && (
+            <p className="text-sm text-muted-foreground">No users yet.</p>
+          )}
+          {users.length > 0 && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Full Name</TableHead>
+                    <TableHead>Roles</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.username}</TableCell>
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell>{u.full_name}</TableCell>
+                      <TableCell>
+                        {(u.roles || []).map((r) => (
+                          <Badge key={r} variant="secondary" className="mr-1">{r}</Badge>
+                        ))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

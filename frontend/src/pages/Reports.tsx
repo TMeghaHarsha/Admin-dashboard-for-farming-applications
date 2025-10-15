@@ -162,7 +162,7 @@ const Reports = () => {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Irrigation by Method</CardHeader></CardHeader>
+            <CardHeader><CardTitle>Irrigation by Method</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={analytics.irrigation_distribution}>

@@ -36,7 +36,8 @@ export default function AdminLogin() {
         body: JSON.stringify({ role }),
       }).catch(() => {});
       toast.success("Welcome, admin!");
-      navigate("/admin/dashboard");
+      // Let root redirect route place admins appropriately
+      navigate("/");
     } else {
       toast.error("Invalid credentials");
     }
