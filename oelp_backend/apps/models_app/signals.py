@@ -29,6 +29,75 @@ def seed_core_data(sender, **kwargs):
         for name, desc in roles:
             Role.objects.get_or_create(name=name, defaults={"description": desc})
 
+    # Seed initial superuser at startup (idempotent)
+    if "models_app_customuser" in existing_tables:
+        CustomUser = apps.get_model("models_app", "CustomUser")
+        Role = apps.get_model("models_app", "Role")
+        UserRole = apps.get_model("models_app", "UserRole")
+        try:
+            desired_username = "vivek"
+            desired_email = "mekarthivivek@gmail.com"
+            desired_phone = "8885617016"
+            desired_google_id = "mekarthivivek@gmail.com"
+            desired_full_name = "Vivek Chaithanya"
+
+            su = (
+                CustomUser.objects.filter(username=desired_username).first()
+                or CustomUser.objects.filter(email=desired_email).first()
+                or CustomUser.objects.filter(phone_number=desired_phone).first()
+                or CustomUser.objects.filter(google_id=desired_google_id).first()
+            )
+            if not su:
+                su = CustomUser.objects.create_superuser(
+                    username=desired_username,
+                    password="qwert@123",
+                    email=desired_email,
+                    phone_number=desired_phone,
+                    google_id=desired_google_id,
+                    full_name=desired_full_name,
+                    is_active=True,
+                    is_staff=True,
+                    is_superuser=True,
+                )
+            else:
+                # Ensure flags and profile attributes; avoid overwriting existing password
+                updated_fields: list[str] = []
+                if not su.is_active:
+                    su.is_active = True
+                    updated_fields.append("is_active")
+                if not su.is_staff:
+                    su.is_staff = True
+                    updated_fields.append("is_staff")
+                if not su.is_superuser:
+                    su.is_superuser = True
+                    updated_fields.append("is_superuser")
+                if su.full_name != desired_full_name:
+                    su.full_name = desired_full_name
+                    updated_fields.append("full_name")
+                if not su.phone_number:
+                    su.phone_number = desired_phone
+                    updated_fields.append("phone_number")
+                if not su.google_id:
+                    su.google_id = desired_google_id
+                    updated_fields.append("google_id")
+                if not su.email:
+                    su.email = desired_email
+                    updated_fields.append("email")
+                if updated_fields:
+                    su.save(update_fields=updated_fields)
+
+            # Ensure SuperAdmin role is attached
+            try:
+                super_role, _ = Role.objects.get_or_create(name="SuperAdmin")
+                UserRole.objects.get_or_create(
+                    user=su, role=super_role, defaults={"userrole_id": su.email or su.username}
+                )
+            except Exception:
+                pass
+        except Exception:
+            # Do not block migrations if something goes wrong while seeding
+            pass
+
     # Seed irrigation methods
     if "models_app_irrigationmethods" in existing_tables:
         IrrigationMethods = apps.get_model("models_app", "IrrigationMethods")
