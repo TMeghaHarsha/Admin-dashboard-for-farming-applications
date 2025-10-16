@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
-import { Bell, User } from "lucide-react";
+import { Bell, User, Shield } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -43,7 +43,7 @@ export function Layout({ children }: LayoutProps) {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showSupportDialog, setShowSupportDialog] = useState(false);
   const [supportData, setSupportData] = useState({ category: "", description: "" });
-  const [me, setMe] = useState<{ full_name?: string; email?: string } | null>(null);
+  const [me, setMe] = useState<{ full_name?: string; email?: string; roles?: string[] } | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -132,7 +132,15 @@ export function Layout({ children }: LayoutProps) {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>
                     <div>
-                      <p className="font-semibold">{me?.full_name || "—"}</p>
+                      <p className="font-semibold flex items-center gap-2">
+                        {me?.full_name || "—"}
+                        {(me?.roles || []).length > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                            <Shield className="h-3 w-3" />
+                            {(me?.roles || [])[0]}
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground">{me?.email || "—"}</p>
                     </div>
                   </DropdownMenuLabel>

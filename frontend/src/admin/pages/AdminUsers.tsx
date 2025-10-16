@@ -100,7 +100,7 @@ export default function AdminUsers() {
                     <SelectItem value="Agronomist">Agronomist</SelectItem>
                     <SelectItem value="Support">Support</SelectItem>
                     <SelectItem value="Business">Business</SelectItem>
-                    <SelectItem value="Development">Development</SelectItem>
+                    <SelectItem value="Developer">Developer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

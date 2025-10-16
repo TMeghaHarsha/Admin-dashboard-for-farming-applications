@@ -1,4 +1,4 @@
-import { Search, Bell, User, LogOut } from "lucide-react";
+import { Search, Bell, User, LogOut, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,9 +23,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 export function AdminTopbar() {
   const navigate = useNavigate();
+  const [me, setMe] = useState<{ full_name?: string; roles?: string[] } | null>(null);
+
+  useEffect(() => {
+    const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    fetch(`${API_URL}/auth/me/`, { headers: { Authorization: `Token ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMe(d))
+      .catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -79,8 +91,20 @@ export function AdminTopbar() {
               <User className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Admin Account</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuLabel>
+              <div>
+                <p className="font-semibold flex items-center gap-2">
+                  {me?.full_name || "Admin Account"}
+                  {(me?.roles || []).length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                      <Shield className="h-3 w-3" />
+                      {(me?.roles || [])[0]}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/admin/settings")}>
               Settings

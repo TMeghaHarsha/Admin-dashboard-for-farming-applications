@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Shield } from "lucide-react";
 import { Sprout, CreditCard, Map, Plus, FileText, Upload, BarChart } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -14,6 +15,7 @@ const Dashboard = () => {
   ]);
   const [practices, setPractices] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
@@ -36,6 +38,14 @@ const Dashboard = () => {
         setRecentActivity((data.recent_activity || []).map((a: any) => ({ action: a.action, time: new Date(a.created_at).toLocaleString() })));
       })
       .catch(() => {});
+    // Load role for display
+    fetch(`${API_URL}/auth/me/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => {
+        const roles = Array.isArray(me?.roles) ? me.roles : [];
+        setUserRole(roles[0] || null);
+      })
+      .catch(() => {});
   }, []);
 
   const practiceRow = (p: any) => ({ name: p.method_name || "Irrigation", status: new Date(p.performed_at).toLocaleString(), field: p.field_name, time: "" });
@@ -44,7 +54,15 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back!</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back!</h1>
+          {userRole && (
+            <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide">
+              <Shield className="h-3.5 w-3.5" />
+              {userRole}
+            </span>
+          )}
+        </div>
         <p className="text-muted-foreground">Here's your farm overview.</p>
       </div>
 

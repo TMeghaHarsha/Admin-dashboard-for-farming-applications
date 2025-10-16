@@ -35,8 +35,16 @@ export default function AdminNotifications() {
       headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
       body: JSON.stringify({ message: payload.message, receiver: payload.receiver || undefined }),
     });
-    if (res.ok) { toast.success("Notification sent"); setOpen(false); setPayload({ receiver: "", message: "" }); load(); }
-    else { toast.error("Failed to send"); }
+    if (res.ok) {
+      toast.success("Notification sent");
+      setOpen(false);
+      setPayload({ receiver: "", message: "" });
+      load();
+    } else {
+      let errText = "Failed to send";
+      try { const e = await res.json(); errText = e.detail || errText; } catch {}
+      toast.error(errText);
+    }
   };
 
   return (
