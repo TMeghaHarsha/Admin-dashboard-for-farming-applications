@@ -11,7 +11,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState([
     { title: "Active Crops", value: "0", icon: Sprout, description: "Currently growing", onClick: () => navigate("/crops") },
     { title: "Current Subscription", value: "Free", icon: CreditCard, description: "—", onClick: () => navigate("/subscriptions") },
-    { title: "Total Fields", value: "0 acres", icon: Map, description: "0 fields", onClick: () => navigate("/fields") },
+    { title: "Total Fields", value: "0", icon: Map, description: "0 fields", onClick: () => navigate("/fields") },
   ]);
   const [practices, setPractices] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -28,14 +28,13 @@ const Dashboard = () => {
         const fieldsCount = Number(data.active_fields || 0);
         const planLabel = data.current_plan?.plan_name || "Free";
         const totalHectares = Number(data.total_hectares || 0);
-        const totalAcres = totalHectares * 2.47105;
         setStats([
           { title: "Active Crops", value: String(activeCrops), icon: Sprout, description: "Currently growing", onClick: () => navigate("/crops") },
           { title: "Current Subscription", value: planLabel, icon: CreditCard, description: "—", onClick: () => navigate("/subscriptions") },
-          { title: "Total Fields", value: `${totalAcres.toFixed(2)} acres`, icon: Map, description: `${fieldsCount} fields`, onClick: () => navigate("/fields") },
+          { title: "Total Fields", value: String(fieldsCount), icon: Map, description: "", onClick: () => navigate("/fields") },
         ]);
         setPractices(Array.isArray(data.current_practices) ? data.current_practices : []);
-        setRecentActivity((data.recent_activity || []).map((a: any) => ({ action: a.action, time: new Date(a.created_at).toLocaleString() })));
+        setRecentActivity((data.recent_activity || []).map((a: any) => ({ action: a.description || a.action, time: new Date(a.created_at).toLocaleString() })));
       })
       .catch(() => {});
     // Load role for display

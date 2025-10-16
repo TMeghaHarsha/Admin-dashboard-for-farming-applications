@@ -1,7 +1,7 @@
 import { Home, Sprout, Map, CreditCard, ClipboardList, BarChart3, Settings as SettingsIcon, Shield } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
-import {
+import { 
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -10,6 +10,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 const defaultItems = [
@@ -23,6 +24,8 @@ const defaultItems = [
 ];
 
 export function AppSidebar() {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
   const [menuItems, setMenuItems] = useState(defaultItems);
   const [role, setRole] = useState<string | null>(null);
   useEffect(() => {
@@ -56,7 +59,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground flex items-center gap-2">
             Agricultural Management
-            {role && (
+            {role && role !== "End-App-User" && !isCollapsed && (
               <span className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
                 <Shield className="h-3 w-3" />
                 {role}

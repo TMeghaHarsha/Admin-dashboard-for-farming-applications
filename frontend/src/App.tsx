@@ -15,7 +15,6 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import { Layout } from "./components/Layout";
 // Admin portal imports
-import AdminLogin from "./admin/pages/AdminLogin";
 import AdminDashboard from "./admin/pages/AdminDashboard";
 import AdminUsers from "./admin/pages/AdminUsers";
 import AdminAnalytics from "./admin/pages/AdminAnalytics";
@@ -145,7 +144,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("token");
   const { roles, loading } = useRoles();
   
-  if (!token) return <Navigate to="/admin/login" replace />;
+  if (!token) return <Navigate to="/login" replace />;
   if (loading) return <Loading />;
   
   // If user has only End-App-User role, redirect to user dashboard
@@ -154,7 +153,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   
   // If user doesn't have any admin roles, redirect to admin login
   const hasAdminRole = (roles || []).some((r) => ADMIN_ROLES.includes(r));
-  if (!hasAdminRole) return <Navigate to="/admin/login" replace />;
+  if (!hasAdminRole) return <Navigate to="/login" replace />;
   
   return <>{children}</>;
 }
@@ -175,9 +174,9 @@ const App = () => (
           <Route path="/practices" element={<RequireUser><Layout><Practices /></Layout></RequireUser>} />
           <Route path="/reports" element={<RequireUser><Layout><Reports /></Layout></RequireUser>} />
           <Route path="/settings" element={<RequireUser><Layout><Settings /></Layout></RequireUser>} />
-          {/* Admin portal routes */}
-          <Route path="/admin" element={<Navigate to="/admin/login" replace />} />
-          <Route path="/admin/login" element={<AdminLogin />} />
+          {/* Admin routes share the unified login page */}
+          <Route path="/admin" element={<Navigate to="/login" replace />} />
+          <Route path="/admin/login" element={<Navigate to="/login" replace />} />
           <Route path="/admin/dashboard" element={<RequireAdmin><AdminLayout><AdminDashboard /></AdminLayout></RequireAdmin>} />
           <Route path="/admin/users" element={<RequireAdmin><AdminLayout><AdminUsers /></AdminLayout></RequireAdmin>} />
           <Route path="/admin/analytics" element={<RequireAdmin><AdminLayout><AdminAnalytics /></AdminLayout></RequireAdmin>} />

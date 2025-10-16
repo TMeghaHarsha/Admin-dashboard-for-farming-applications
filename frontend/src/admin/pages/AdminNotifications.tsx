@@ -16,6 +16,9 @@ export default function AdminNotifications() {
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState({ receiver: "", message: "" });
+  const [template, setTemplate] = useState<string>("");
+  const [targetRoles, setTargetRoles] = useState<string[]>([]);
+  const [me, setMe] = useState<{ roles?: string[] } | null>(null);
 
   const token = localStorage.getItem("token");
 
@@ -26,19 +29,27 @@ export default function AdminNotifications() {
       .catch(() => {});
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { 
+    load(); 
+    fetch(`${API_URL}/auth/me/`, { headers: { Authorization: `Token ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMe(d))
+      .catch(() => {});
+  }, []);
 
   const create = async () => {
     if (!payload.message) { toast.error("Message required"); return; }
     const res = await fetch(`${API_URL}/admin/notifications/`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
-      body: JSON.stringify({ message: payload.message, receiver: payload.receiver || undefined }),
+      body: JSON.stringify({ message: payload.message, receiver: payload.receiver || undefined, target_roles: targetRoles.length ? targetRoles : undefined }),
     });
     if (res.ok) {
       toast.success("Notification sent");
       setOpen(false);
       setPayload({ receiver: "", message: "" });
+      setTemplate("");
+      setTargetRoles([]);
       load();
     } else {
       let errText = "Failed to send";
@@ -63,6 +74,36 @@ export default function AdminNotifications() {
               <DialogTitle>Create New Notification</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Template</Label>
+                <Select value={template} onValueChange={(v) => {
+                  setTemplate(v);
+                  // Define flows per requirements
+                  const map: Record<string, string[]> = {
+                    admin_to_manager: ["Admin"],
+                    manager_to_all: ["SuperAdmin", "Business", "Analyst", "Agronomist", "Development", "Support", "End-App-User"],
+                    business_to_manager_support_user: ["Admin", "Support", "End-App-User"],
+                    analyst_to_manager_support_user: ["Admin", "Support", "End-App-User"],
+                    development_to_manager_support_user: ["Admin", "Support", "End-App-User"],
+                    agronomist_to_manager_support_user: ["Admin", "Support", "End-App-User"],
+                    support_to_all_except_superadmin: ["Admin", "Business", "Analyst", "Agronomist", "Development", "Support", "End-App-User"],
+                  };
+                  setTargetRoles(map[v] || []);
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a template (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin_to_manager">Admin → Manager</SelectItem>
+                    <SelectItem value="manager_to_all">Manager → Super-Admin, Business, Analyst, Agronomist, Development, Support, User</SelectItem>
+                    <SelectItem value="business_to_manager_support_user">Business → Manager, Support, User</SelectItem>
+                    <SelectItem value="analyst_to_manager_support_user">Analyst → Manager, Support, User</SelectItem>
+                    <SelectItem value="development_to_manager_support_user">Development → Manager, Support, User</SelectItem>
+                    <SelectItem value="agronomist_to_manager_support_user">Agronomist → Manager, Support, User</SelectItem>
+                    <SelectItem value="support_to_all_except_superadmin">Support → All except Super-Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Recipient</Label>
                 <Select value={payload.receiver} onValueChange={(v) => setPayload({ ...payload, receiver: v })}>

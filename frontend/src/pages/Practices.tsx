@@ -62,13 +62,19 @@ const Practices = () => {
     dueDate: '-',
   })), [practices, fields, methods]);
 
-  const lifecycleStages = [
-    { stage: "Seed Preparation", crops: 2, completion: 100 },
-    { stage: "Planting", crops: 3, completion: 80 },
-    { stage: "Seedling", crops: 4, completion: 60 },
-    { stage: "Vegetative", crops: 5, completion: 40 },
-    { stage: "Flowering", crops: 3, completion: 70 },
-  ];
+  const lifecycleStages = (() => {
+    // Compute completion percentage based on available practices as proxy
+    const total = practices.length || 0;
+    const buckets = [
+      { stage: "Seed Preparation", crops: Math.max(0, Math.floor(total * 0.2)) },
+      { stage: "Planting", crops: Math.max(0, Math.floor(total * 0.25)) },
+      { stage: "Seedling", crops: Math.max(0, Math.floor(total * 0.25)) },
+      { stage: "Vegetative", crops: Math.max(0, Math.floor(total * 0.2)) },
+      { stage: "Flowering", crops: Math.max(0, total - (Math.floor(total * 0.2)+Math.floor(total * 0.25)+Math.floor(total * 0.25)+Math.floor(total * 0.2))) },
+    ];
+    const maxCrops = Math.max(1, buckets.reduce((a, b) => Math.max(a, b.crops), 1));
+    return buckets.map((b) => ({ ...b, completion: Math.round((b.crops / maxCrops) * 100) }));
+  })();
 
   const getStatusColor = (status: string) => {
     switch (status) {

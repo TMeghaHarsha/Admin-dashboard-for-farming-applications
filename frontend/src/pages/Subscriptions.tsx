@@ -27,6 +27,7 @@ const Subscriptions = () => {
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showPlanDialog, setShowPlanDialog] = useState<{ open: boolean; plan: any | null }>({ open: false, plan: null });
   const [card, setCard] = useState({ brand: "Visa", last4: "", exp_month: "", exp_year: "" });
   const [loadingPlan, setLoadingPlan] = useState<number | null>(null);
 
@@ -62,7 +63,7 @@ const Subscriptions = () => {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ plan: planId, start_date: today.toISOString().slice(0,10), end_date: end.toISOString().slice(0,10), expire_at: end.toISOString() }),
       });
-      if (res.ok) { toast.success("Plan selected"); load(); } else { toast.error("Failed to select plan"); }
+      if (res.ok) { toast.success("Plan selected"); setShowPlanDialog({ open: false, plan: null }); load(); } else { const e = await res.json().catch(()=>({})); toast.error(e.detail || "Failed to select plan"); }
     } catch { toast.error("Failed to select plan"); } finally { setLoadingPlan(null); }
   };
 
@@ -110,7 +111,7 @@ const Subscriptions = () => {
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
-            <Button onClick={() => {}} disabled>Upgrade Plan</Button>
+            <Button onClick={() => setShowPlanDialog({ open: true, plan: null })}>Upgrade Plan</Button>
             <Button variant="outline" onClick={handleDowngrade} disabled={!canDowngrade}>Downgrade Plan</Button>
           </div>
         </CardContent>
@@ -139,8 +140,8 @@ const Subscriptions = () => {
                 {userPlan?.plan === plan.id ? (
                   <Button className="w-full" disabled>Current Plan</Button>
                 ) : (
-                  <Button className="w-full" onClick={() => selectPlan(plan.id)} disabled={loadingPlan === plan.id}>
-                    {loadingPlan === plan.id ? 'Processing...' : `Select ${plan.name}`}
+                  <Button className="w-full" onClick={() => setShowPlanDialog({ open: true, plan })}>
+                    View Details
                   </Button>
                 )}
               </CardContent>
@@ -173,7 +174,15 @@ const Subscriptions = () => {
                   <p className="text-sm text-muted-foreground">Expires {pm.exp_month}/{pm.exp_year}</p>
                 </div>
               </div>
-              {pm.is_primary && <Badge variant="secondary">Primary</Badge>}
+              <div className="flex items-center gap-2">
+                {pm.is_primary && <Badge variant="secondary">Primary</Badge>}
+                <Button variant="outline" size="sm" onClick={async () => {
+                  const res = await fetch(`${API_URL}/payment-methods/${pm.id}/`, { method: 'DELETE', headers: { ...authHeaders() } });
+                  if (res.ok) { toast.success('Removed'); load(); } else { toast.error('Failed to remove'); }
+                }}>
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
         </CardContent>
@@ -248,6 +257,48 @@ const Subscriptions = () => {
               <Button onClick={addPaymentMethod}>Save</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPlanDialog.open} onOpenChange={(open) => setShowPlanDialog({ open, plan: open ? showPlanDialog.plan : null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{showPlanDialog.plan?.name || 'Choose a Plan'}</DialogTitle>
+          </DialogHeader>
+          {!showPlanDialog.plan && (
+            <div className="space-y-3">
+              {plans.map((p) => (
+                <div key={p.id} className="flex items-center justify-between p-3 border rounded">
+                  <div>
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">${p.price} / {p.duration}d</p>
+                  </div>
+                  <Button size="sm" onClick={() => setShowPlanDialog({ open: true, plan: p })}>View</Button>
+                </div>
+              ))}
+            </div>
+          )}
+          {showPlanDialog.plan && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium">Details</p>
+                <p className="text-sm text-muted-foreground">Duration: {showPlanDialog.plan.duration} days</p>
+                <p className="text-sm text-muted-foreground">Cost: ${showPlanDialog.plan.price}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Features</p>
+                <ul className="text-sm list-disc ml-5 text-muted-foreground">
+                  {(showPlanDialog.plan.features || []).map((f: string, idx: number) => (<li key={idx}>{f}</li>))}
+                  {(!showPlanDialog.plan.features || showPlanDialog.plan.features.length === 0) && <li>Basic access</li>}
+                </ul>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={() => selectPlan(showPlanDialog.plan.id)} disabled={loadingPlan === showPlanDialog.plan.id}>
+                  {loadingPlan === showPlanDialog.plan.id ? 'Processing...' : 'Make Payment'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
