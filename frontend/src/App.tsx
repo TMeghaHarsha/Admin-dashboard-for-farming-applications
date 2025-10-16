@@ -64,14 +64,25 @@ function useRoles() {
         if (res.ok) {
           const data = await res.json();
           setRoles(Array.isArray(data?.roles) ? data.roles : []);
-        } else {
+        } else if (res.status === 401 || res.status === 403) {
           // Invalid token: clear and treat as unauthenticated
-          try { localStorage.removeItem("token"); } catch {}
+          try { 
+            localStorage.removeItem("token"); 
+          } catch (e) {
+            // Ignore localStorage errors
+          }
           setRoles(null);
+        } else {
+          // Other errors, keep token but set empty roles
+          setRoles([]);
         }
       } catch {
         // On network or parsing error, clear token and require re-auth
-        try { localStorage.removeItem("token"); } catch {}
+        try { 
+          localStorage.removeItem("token"); 
+        } catch (e) {
+          // Ignore localStorage errors
+        }
         setRoles(null);
       } finally {
         setLoading(false);
@@ -85,9 +96,20 @@ function useRoles() {
 function RootRedirect() {
   const token = localStorage.getItem("token");
   const { roles, loading } = useRoles();
+  
+  // Always redirect to login if no token
   if (!token) return <Navigate to="/login" replace />;
+  
+  // Show loading while checking roles
   if (loading) return <Loading />;
-  const isAdmin = (roles || []).some((r) => ADMIN_ROLES.includes(r));
+  
+  // If token exists but no roles (invalid token), redirect to login
+  if (!roles || roles.length === 0) {
+    localStorage.removeItem("token");
+    return <Navigate to="/login" replace />;
+  }
+  
+  const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
   return <Navigate to={isAdmin ? "/admin/dashboard" : "/dashboard"} replace />;
 }
 
@@ -102,19 +124,39 @@ function RequireRole({ allowed, redirectTo, children }: { allowed: string[]; red
 }
 
 function RequireUser({ children }: { children: React.ReactNode }) {
-  return (
-    <RequireRole allowed={["End-App-User"]} redirectTo="/login">
-      {children}
-    </RequireRole>
-  );
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  
+  // If user has admin roles, redirect to admin dashboard
+  const isAdmin = (roles || []).some((r) => ADMIN_ROLES.includes(r));
+  if (isAdmin) return <Navigate to="/admin/dashboard" replace />;
+  
+  // If user doesn't have End-App-User role, redirect to login
+  const hasUserRole = (roles || []).includes("End-App-User");
+  if (!hasUserRole) return <Navigate to="/login" replace />;
+  
+  return <>{children}</>;
 }
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  return (
-    <RequireRole allowed={ADMIN_ROLES} redirectTo="/admin/login">
-      {children}
-    </RequireRole>
-  );
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  
+  if (!token) return <Navigate to="/admin/login" replace />;
+  if (loading) return <Loading />;
+  
+  // If user has only End-App-User role, redirect to user dashboard
+  const isUserOnly = (roles || []).length === 1 && (roles || []).includes("End-App-User");
+  if (isUserOnly) return <Navigate to="/dashboard" replace />;
+  
+  // If user doesn't have any admin roles, redirect to admin login
+  const hasAdminRole = (roles || []).some((r) => ADMIN_ROLES.includes(r));
+  if (!hasAdminRole) return <Navigate to="/admin/login" replace />;
+  
+  return <>{children}</>;
 }
 
 const App = () => (
