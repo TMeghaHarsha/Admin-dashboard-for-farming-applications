@@ -226,15 +226,17 @@ class DashboardView(APIView):
         user_fields = Field.objects.filter(user=user, is_active=True)
         active_fields = user_fields.count()
 
-        # Count fields with a crop assigned and not yet harvested (no harvesting_date recorded)
-        active_crops = (
+        # Count fields with a crop assigned (considered active until harvested)
+        # Prefer explicit lifecycle harvested flag when available, otherwise count assigned crops
+        lifecycle_active = (
             CropLifecycleDates.objects
-            .filter(field__in=user_fields, field__crop__isnull=False)
-            .filter(harvesting_date__isnull=True)
+            .filter(field__in=user_fields, field__crop__isnull=False, harvesting_date__isnull=True)
             .values("field_id")
             .distinct()
             .count()
         )
+        assigned_crops = user_fields.filter(crop__isnull=False).count()
+        active_crops = max(lifecycle_active, assigned_crops)
 
         # Total area in hectares summed from JSON field
         total_hectares = 0.0
@@ -357,12 +359,46 @@ class AdminNotificationsViewSet(viewsets.ModelViewSet):
             .order_by("-created_at")
         )
 
-    def perform_create(self, serializer):
-        receiver_id = self.request.data.get("receiver")
+    def create(self, request, *args, **kwargs):
+        message = request.data.get("message", "").strip()
+        if not message:
+            return Response({"detail": "message is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Accept either a single receiver or a list of target_roles for bulk send
+        target_roles = request.data.get("target_roles") or []
+        if isinstance(target_roles, str):
+            try:
+                # support comma separated values
+                target_roles = [r.strip() for r in target_roles.split(",") if r.strip()]
+            except Exception:
+                target_roles = []
+
+        if target_roles:
+            try:
+                users_qs = CustomUser.objects.filter(
+                    user_roles__role__name__in=target_roles
+                ).distinct()
+                created = 0
+                for u in users_qs:
+                    Notification.objects.create(sender=request.user, receiver=u, message=message)
+                    created += 1
+                return Response({"sent": created}, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fallback to a single receiver or self
+        receiver_id = request.data.get("receiver")
         receiver = None
         if receiver_id:
             receiver = CustomUser.objects.filter(pk=receiver_id).first()
-        serializer.save(sender=self.request.user, receiver=receiver or self.request.user)
+        obj = Notification.objects.create(
+            sender=request.user,
+            receiver=receiver or request.user,
+            message=message,
+        )
+        serializer = self.get_serializer(obj)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class AdminFieldViewSet(viewsets.ReadOnlyModelViewSet):
@@ -577,7 +613,36 @@ class SupportRequestViewSet(viewsets.ModelViewSet):
         return SupportRequest.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        obj = serializer.save(user=self.request.user)
+        # Auto route to appropriate roles and create notifications (Support flows)
+        try:
+            category = obj.category
+            # Map categories to roles that should be notified
+            category_roles_map = {
+                "transaction": ["Business", "Support", "Admin"],
+                "analysis": ["Analyst", "Support", "Admin"],
+                "software_issue": ["Development", "Support", "Admin"],
+                "crop": ["Agronomist", "Support", "Admin"],
+            }
+            target_roles = category_roles_map.get(category, ["Support", "Admin"])
+            # Ensure we do not include SuperAdmin per requirements
+            target_roles = [r for r in target_roles if r != "SuperAdmin"]
+            # Persist the first assigned role for quick triage
+            try:
+                obj.assigned_role = target_roles[0]
+                obj.save(update_fields=["assigned_role"])
+            except Exception:
+                pass
+            users = CustomUser.objects.filter(user_roles__role__name__in=target_roles).distinct()
+            for u in users:
+                Notification.objects.create(
+                    sender=self.request.user,
+                    receiver=u,
+                    message=f"Support request ({category}) from {self.request.user.username}: {obj.description[:140]}"
+                )
+        except Exception:
+            # Non-critical
+            pass
 
 
 class PracticeViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
@@ -624,6 +689,27 @@ class UserPlanViewSet(viewsets.ModelViewSet):
                 amount=user_plan.plan.price,
                 currency="USD",
                 status="paid",
+            )
+        except Exception:
+            pass
+        # Record activity
+        try:
+            ct = ContentType.objects.get_for_model(user_plan.__class__)
+            UserActivity.objects.create(
+                user=self.request.user,
+                action="create",
+                content_type=ct,
+                object_id=user_plan.pk,
+                description=f"Selected plan {getattr(user_plan.plan, 'name', '-')}",
+            )
+        except Exception:
+            pass
+        # Auto notify user (Business flow) about subscription
+        try:
+            Notification.objects.create(
+                sender=None,
+                receiver=self.request.user,
+                message=f"Your subscription to {getattr(user_plan.plan, 'name', '-')} is active."
             )
         except Exception:
             pass

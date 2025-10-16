@@ -24,38 +24,8 @@ const Reports = () => {
     { title: "Active Reports", value: analytics && analytics.has_data ? String((analytics.crop_distribution || []).reduce((a:number,b:any)=>a+b.value,0)) : "0", subtitle: "" },
   ];
 
-  const cropHealth = [
-    { crop: "Wheat", health: "Excellent", yield: "95%", issues: "None" },
-    { crop: "Corn", health: "Good", yield: "88%", issues: "Minor pest activity" },
-    { crop: "Rice", health: "Fair", yield: "76%", issues: "Nutrient deficiency" },
-    { crop: "Tomato", health: "Good", yield: "82%", issues: "Fungal spots" },
-  ];
-
-  const soilHealth = [
-    { field: "Field A1", ph: "6.8", nitrogen: "High", phosphorus: "Medium", potassium: "High", date: "2024-01-15" },
-    { field: "Field B2", ph: "7.2", nitrogen: "Medium", phosphorus: "High", potassium: "Medium", date: "2024-01-20" },
-    { field: "Field C3", ph: "6.5", nitrogen: "Low", phosphorus: "Low", potassium: "Medium", date: "2024-01-10" },
-  ];
-
-  const productivity = [
-    { period: "Q4 2023", yield: "45.2 tons", revenue: "$28,400", efficiency: "92%" },
-    { period: "Q3 2023", yield: "52.8 tons", revenue: "$33,200", efficiency: "89%" },
-    { period: "Q2 2023", yield: "48.1 tons", revenue: "$30,100", efficiency: "91%" },
-  ];
-
-  const yieldData = [
-    { name: "Q1", yield: 45 },
-    { name: "Q2", yield: 48 },
-    { name: "Q3", yield: 53 },
-    { name: "Q4", yield: 45 },
-  ];
-
-  const cropDistribution = [
-    { name: "Wheat", value: 30 },
-    { name: "Corn", value: 25 },
-    { name: "Rice", value: 25 },
-    { name: "Others", value: 20 },
-  ];
+  // Additional analytics: field growth over time and plan mix
+  const [extra, setExtra] = useState<{ planMix: any[]; fieldsOverTime: any[] } | null>(null);
 
   const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
 
@@ -65,6 +35,23 @@ const Reports = () => {
         const res = await fetch(`${API_URL}/analytics/summary/`, { headers: authHeaders });
         const data = await res.json();
         if (res.ok) setAnalytics(data);
+        // Build simple derived analytics using existing endpoints
+        const fieldsRes = await fetch(`${API_URL}/fields/`, { headers: authHeaders });
+        const plansRes = await fetch(`${API_URL}/subscriptions/user/`, { headers: authHeaders });
+        const fieldsJson = await fieldsRes.json().catch(() => ({}));
+        const plansJson = await plansRes.json().catch(() => ({}));
+        const fields = Array.isArray(fieldsJson?.results) ? fieldsJson.results : fieldsJson || [];
+        const tx = Array.isArray(plansJson?.results) ? plansJson.results : Array.isArray(plansJson) ? plansJson : [plansJson].filter(Boolean);
+        const byMonth: Record<string, number> = {};
+        fields.forEach((f: any) => {
+          const d = (f.created_at || '').slice(0,7) || 'unknown';
+          byMonth[d] = (byMonth[d] || 0) + 1;
+        });
+        const fieldsOverTime = Object.keys(byMonth).sort().map((m) => ({ month: m, fields: byMonth[m] }));
+        const planMixMap: Record<string, number> = {};
+        tx.forEach((p: any) => { const name = p.plan_name || 'Unknown'; planMixMap[name] = (planMixMap[name] || 0) + 1; });
+        const planMix = Object.keys(planMixMap).map((k) => ({ name: k, value: planMixMap[k] }));
+        setExtra({ planMix, fieldsOverTime });
       } catch {}
     };
     fetchIt();
@@ -172,6 +159,40 @@ const Reports = () => {
                   <Tooltip />
                   <Bar dataKey="value" fill={COLORS[0]} />
                 </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {extra && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle>Fields Created Over Time</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={extra.fieldsOverTime}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="fields" fill={COLORS[1]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Plan Mix</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={extra.planMix} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                    {(extra.planMix || []).map((_: any, idx: number) => (
+                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>

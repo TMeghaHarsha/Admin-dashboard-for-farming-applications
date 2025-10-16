@@ -30,7 +30,7 @@ const Crops = () => {
   const [openLifecycleDialog, setOpenLifecycleDialog] = useState(false);
   const [editingCrop, setEditingCrop] = useState<{ id: number; name: string; icon_url?: string | null } | null>(null);
   const [editingVariety, setEditingVariety] = useState<{ id: number; crop: number; name: string; is_primary: boolean } | null>(null);
-  const [formCrop, setFormCrop] = useState({ name: "", icon_url: "" });
+  const [formCrop, setFormCrop] = useState({ name: "", icon_url: "", season: "" });
   const [formVariety, setFormVariety] = useState({ crop: "", name: "", is_primary: false });
   const [fields, setFields] = useState<any[]>([]);
   const [lifecycle, setLifecycle] = useState({ field: "", sowing_date: "", growth_start_date: "", flowering_date: "", harvesting_date: "", yield_amount: "" });
@@ -122,6 +122,7 @@ const Crops = () => {
   };
 
   const submitCrop = async () => {
+    if (!formCrop.name || !formCrop.season) { toast.error('Please fill required fields'); return; }
     const payload = { name: formCrop.name, icon_url: formCrop.icon_url || null };
     const isEdit = !!editingCrop;
     const url = isEdit ? `${API_URL}/crops/${editingCrop!.id}/` : `${API_URL}/crops/`;
@@ -268,8 +269,9 @@ const Crops = () => {
                 <label>Crop</label>
                 <select className="border rounded h-9 px-2" value={filter.crop_id} onChange={(e) => setFilter({ ...filter, crop_id: e.target.value })}>
                   <option value="">All</option>
-                  {crops.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                  {crops.map((c) => (<option key={c.id} value={String(c.id)}>{c.name}</option>))}
                 </select>
+                <Button variant="outline" size="sm" onClick={() => setFilter({ has_variety: "", crop_id: "" })}>Reset</Button>
               </div>
             )}
           </div>
@@ -298,7 +300,7 @@ const Crops = () => {
                 <TableRow key={crop.id}>
                   <TableCell className="font-medium">{crop.name}</TableCell>
                   <TableCell>{varieties.find((v) => v.crop === crop.id && v.is_primary)?.name || "-"}</TableCell>
-                  <TableCell>-</TableCell>
+                  <TableCell>{/* season is not persisted on backend; show placeholder if missing */}{"—"}</TableCell>
                   <TableCell>
                     <Badge>—</Badge>
                   </TableCell>
@@ -362,6 +364,17 @@ const Crops = () => {
                   {Object.keys(sampleCrops).map((n) => (<option key={n} value={n}>{n}</option>))}
                 </select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Season</Label>
+              <select className="border rounded-md h-10 px-3 w-full" value={formCrop.season} onChange={(e) => setFormCrop({ ...formCrop, season: e.target.value })}>
+                <option value="" disabled>Select season</option>
+                <option value="Kharif">Kharif</option>
+                <option value="Rabi">Rabi</option>
+                <option value="Zaid">Zaid</option>
+                <option value="Summer">Summer</option>
+                <option value="Winter">Winter</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label>Icon URL</Label>
