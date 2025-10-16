@@ -34,7 +34,7 @@ const ADMIN_ROLES = [
   "Admin",
   "Analyst",
   "Business",
-  "Development",
+  "Developer",
   "Support",
   "Agronomist",
 ];
@@ -65,10 +65,14 @@ function useRoles() {
           const data = await res.json();
           setRoles(Array.isArray(data?.roles) ? data.roles : []);
         } else {
-          setRoles([]);
+          // Invalid token: clear and treat as unauthenticated
+          try { localStorage.removeItem("token"); } catch {}
+          setRoles(null);
         }
       } catch {
-        setRoles([]);
+        // On network or parsing error, clear token and require re-auth
+        try { localStorage.removeItem("token"); } catch {}
+        setRoles(null);
       } finally {
         setLoading(false);
       }
@@ -93,10 +97,7 @@ function RequireRole({ allowed, redirectTo, children }: { allowed: string[]; red
   if (!token) return <Navigate to={redirectTo} replace />;
   if (loading) return <Loading />;
   const hasRole = (roles || []).some((r) => allowed.includes(r));
-  if (!hasRole) {
-    const isAdmin = (roles || []).some((r) => ADMIN_ROLES.includes(r));
-    return <Navigate to={isAdmin ? "/admin/dashboard" : "/dashboard"} replace />;
-  }
+  if (!hasRole) return <Navigate to={redirectTo} replace />;
   return <>{children}</>;
 }
 

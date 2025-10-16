@@ -1,4 +1,4 @@
-import { Home, Sprout, Map, CreditCard, ClipboardList, BarChart3, Settings as SettingsIcon } from "lucide-react";
+import { Home, Sprout, Map, CreditCard, ClipboardList, BarChart3, Settings as SettingsIcon, Shield } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
@@ -24,6 +24,7 @@ const defaultItems = [
 
 export function AppSidebar() {
   const [menuItems, setMenuItems] = useState(defaultItems);
+  const [role, setRole] = useState<string | null>(null);
   useEffect(() => {
     const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
     const token = localStorage.getItem("token");
@@ -44,12 +45,24 @@ export function AppSidebar() {
         }
       })
       .catch(() => {});
+    fetch(`${API_URL}/auth/me/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => setRole((me?.roles || [])[0] || null))
+      .catch(() => {});
   }, []);
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground">Agricultural Management</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-foreground flex items-center gap-2">
+            Agricultural Management
+            {role && (
+              <span className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                <Shield className="h-3 w-3" />
+                {role}
+              </span>
+            )}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (

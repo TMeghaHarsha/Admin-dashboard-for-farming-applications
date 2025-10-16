@@ -29,7 +29,7 @@ export default function AdminLogin() {
     if (res.ok) {
       const data = await res.json();
       if (data.token) localStorage.setItem("token", data.token);
-      // ensure selected admin role exists for this user
+      // Attempt to ensure selected admin role if current user is SuperAdmin (will 403 otherwise)
       await fetch(`${API_URL}/auth/ensure-role/`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Token ${data.token}` },
@@ -76,7 +76,7 @@ export default function AdminLogin() {
                   <SelectItem value="Support">Support</SelectItem>
                   <SelectItem value="Analyst">Analyst</SelectItem>
                   <SelectItem value="Business">Business</SelectItem>
-                  <SelectItem value="Development">Development</SelectItem>
+                  <SelectItem value="Developer">Developer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
