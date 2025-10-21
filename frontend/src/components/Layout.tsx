@@ -42,6 +42,7 @@ export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [showSupportDialog, setShowSupportDialog] = useState(false);
+  const [showFaqDialog, setShowFaqDialog] = useState(false);
   const [supportData, setSupportData] = useState({ category: "", description: "" });
   const [me, setMe] = useState<{ full_name?: string; email?: string; roles?: string[] } | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -147,6 +148,9 @@ export function Layout({ children }: LayoutProps) {
                   <DropdownMenuItem onClick={() => navigate("/settings")}>
                     Profile
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowFaqDialog(true)}>
+                    FAQ
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowSupportDialog(true)}>
                     Support
                   </DropdownMenuItem>
@@ -179,6 +183,69 @@ export function Layout({ children }: LayoutProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showFaqDialog} onOpenChange={setShowFaqDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Frequently Asked Questions</DialogTitle>
+            <DialogDescription>
+              Find answers to common questions about our agricultural management platform.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 mt-4">
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I add a new crop to my farm?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: Go to the Crops page and click "Add Crop". Fill in the required fields including name, season, status, and planted date. You can also specify variety, sowing date, and harvesting date.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I track my field's irrigation?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: On the Fields page, you can set irrigation methods for each field and schedule irrigation activities. The system will track and display your irrigation practices.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I generate soil reports?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: Go to the Fields page and click "Generate Soil Report". Select the field and enter soil analysis data including pH and EC values.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I view my farm analytics?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: Visit the Reports page to see comprehensive analytics including crop distribution, field growth over time, and subscription plan mix.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I change my subscription plan?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: Go to the Subscriptions page to view available plans and upgrade or downgrade your current subscription.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I export my data?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: On the Reports page, you can download CSV files or export PDF reports by selecting the specific analytics you want to include.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Q: How do I delete my account?</h4>
+                <p className="text-sm text-muted-foreground">
+                  A: Go to Settings and scroll down to the "Danger Zone" section. Click "Delete Account" and follow the confirmation steps.
+                </p>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showSupportDialog} onOpenChange={setShowSupportDialog}>
         <DialogContent>

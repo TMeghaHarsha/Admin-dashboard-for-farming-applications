@@ -32,27 +32,59 @@ const Reports = () => {
   useEffect(() => {
     const fetchIt = async () => {
       try {
-        const res = await fetch(`${API_URL}/analytics/summary/`, { headers: authHeaders });
-        const data = await res.json();
-        if (res.ok) setAnalytics(data);
-        // Build simple derived analytics using existing endpoints
-        const fieldsRes = await fetch(`${API_URL}/fields/`, { headers: authHeaders });
-        const plansRes = await fetch(`${API_URL}/subscriptions/user/`, { headers: authHeaders });
+        // Fetch all data in parallel
+        const [analyticsRes, fieldsRes, cropsRes, plansRes] = await Promise.all([
+          fetch(`${API_URL}/analytics/summary/`, { headers: authHeaders }),
+          fetch(`${API_URL}/fields/`, { headers: authHeaders }),
+          fetch(`${API_URL}/crops/`, { headers: authHeaders }),
+          fetch(`${API_URL}/subscriptions/user/`, { headers: authHeaders })
+        ]);
+        
+        const analyticsData = await analyticsRes.json();
+        if (analyticsRes.ok) setAnalytics(analyticsData);
+        
         const fieldsJson = await fieldsRes.json().catch(() => ({}));
+        const cropsJson = await cropsRes.json().catch(() => ({}));
         const plansJson = await plansRes.json().catch(() => ({}));
+        
         const fields = Array.isArray(fieldsJson?.results) ? fieldsJson.results : fieldsJson || [];
-        const tx = Array.isArray(plansJson?.results) ? plansJson.results : Array.isArray(plansJson) ? plansJson : [plansJson].filter(Boolean);
+        const crops = Array.isArray(cropsJson?.results) ? cropsJson.results : cropsJson || [];
+        const plans = Array.isArray(plansJson?.results) ? plansJson.results : Array.isArray(plansJson) ? plansJson : [plansJson].filter(Boolean);
+        
+        // Build crop distribution from actual crops data
+        const cropDistribution: Record<string, number> = {};
+        fields.forEach((field: any) => {
+          if (field.crop_name) {
+            cropDistribution[field.crop_name] = (cropDistribution[field.crop_name] || 0) + 1;
+          }
+        });
+        const cropDistData = Object.keys(cropDistribution).map(name => ({ name, value: cropDistribution[name] }));
+        
+        // Build fields over time
         const byMonth: Record<string, number> = {};
         fields.forEach((f: any) => {
           const d = (f.created_at || '').slice(0,7) || 'unknown';
           byMonth[d] = (byMonth[d] || 0) + 1;
         });
         const fieldsOverTime = Object.keys(byMonth).sort().map((m) => ({ month: m, fields: byMonth[m] }));
+        
+        // Build plan mix
         const planMixMap: Record<string, number> = {};
-        tx.forEach((p: any) => { const name = p.plan_name || 'Unknown'; planMixMap[name] = (planMixMap[name] || 0) + 1; });
+        plans.forEach((p: any) => { 
+          const name = p.plan_name || 'Free'; 
+          planMixMap[name] = (planMixMap[name] || 0) + 1; 
+        });
         const planMix = Object.keys(planMixMap).map((k) => ({ name: k, value: planMixMap[k] }));
+        
+        // Update analytics with correct crop distribution
+        if (analyticsData) {
+          analyticsData.crop_distribution = cropDistData;
+        }
+        
         setExtra({ planMix, fieldsOverTime });
-      } catch {}
+      } catch (error) {
+        console.error('Error fetching analytics:', error);
+      }
     };
     fetchIt();
   }, []);
@@ -135,15 +167,15 @@ const Reports = () => {
           </CardHeader>
         </Card>
       )}
-      {analytics && analytics.has_data && (
+      {(analytics?.crop_distribution?.length > 0 || extra?.planMix?.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader><CardTitle>Crop Distribution</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={analytics.crop_distribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                    {(analytics.crop_distribution || []).map((_: any, idx: number) => (
+                  <Pie data={analytics?.crop_distribution || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                    {(analytics?.crop_distribution || []).map((_: any, idx: number) => (
                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                     ))}
                   </Pie>
@@ -153,24 +185,25 @@ const Reports = () => {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Irrigation by Method</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Plan Mix</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={analytics.irrigation_distribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis allowDecimals={false} />
+                <PieChart>
+                  <Pie data={extra?.planMix || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                    {(extra?.planMix || []).map((_: any, idx: number) => (
+                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                    ))}
+                  </Pie>
                   <Tooltip />
-                  <Bar dataKey="value" fill={COLORS[0]} />
-                </BarChart>
+                </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {extra && (
-        <div className="grid gap-4 md:grid-cols-2">
+      {extra?.fieldsOverTime?.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-1">
           <Card>
             <CardHeader><CardTitle>Fields Created Over Time</CardTitle></CardHeader>
             <CardContent>
@@ -182,21 +215,6 @@ const Reports = () => {
                   <Tooltip />
                   <Bar dataKey="fields" fill={COLORS[1]} />
                 </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle>Plan Mix</CardTitle></CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={extra.planMix} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                    {(extra.planMix || []).map((_: any, idx: number) => (
-                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
