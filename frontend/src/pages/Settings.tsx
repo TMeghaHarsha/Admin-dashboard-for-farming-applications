@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 const Settings = () => {
@@ -51,6 +53,9 @@ const Settings = () => {
     weather: true,
   });
 
+  const [deleteAccountDialog, setDeleteAccountDialog] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+
   const handleUpdateProfile = () => {
     fetch(`${API_URL}/auth/me/`, {
       method: "PUT",
@@ -93,6 +98,31 @@ const Settings = () => {
         toast.error(err.detail || "Failed to update password");
       }
     });
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmation !== "DELETE") {
+      toast.error("Please type 'DELETE' to confirm account deletion");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/auth/me/`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+      });
+
+      if (res.ok) {
+        toast.success("Account deleted successfully");
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || "Failed to delete account");
+      }
+    } catch (error) {
+      toast.error("Failed to delete account");
+    }
   };
 
   return (
@@ -269,7 +299,64 @@ const Settings = () => {
         </CardContent>
       </Card>
 
-      {/* Removed global Save All Settings per requirements */}
+      <Card className="border-red-200">
+        <CardHeader>
+          <CardTitle className="text-red-600 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            Danger Zone
+          </CardTitle>
+          <CardDescription>Irreversible and destructive actions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium text-red-600">Delete Account</h4>
+              <p className="text-sm text-muted-foreground">
+                Once you delete your account, there is no going back. Please be certain.
+              </p>
+            </div>
+            <Dialog open={deleteAccountDialog} onOpenChange={setDeleteAccountDialog}>
+              <DialogTrigger asChild>
+                <Button variant="destructive">Delete Account</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Are you absolutely sure?</DialogTitle>
+                  <DialogDescription>
+                    This action cannot be undone. This will permanently delete your account
+                    and remove all your data from our servers.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="delete-confirmation">
+                      Type <span className="font-mono bg-gray-100 px-1 rounded">DELETE</span> to confirm
+                    </Label>
+                    <Input
+                      id="delete-confirmation"
+                      value={deleteConfirmation}
+                      onChange={(e) => setDeleteConfirmation(e.target.value)}
+                      placeholder="DELETE"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDeleteAccountDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleDeleteAccount}
+                    disabled={deleteConfirmation !== "DELETE"}
+                  >
+                    Delete Account
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

@@ -74,21 +74,19 @@ const Reports = () => {
           <p className="text-muted-foreground">Comprehensive insights into your farming operations</p>
         </div>
         <div className="flex gap-2 items-center">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Start</label>
-            <input type="date" className="border rounded h-9 px-2" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">End</label>
-            <input type="date" className="border rounded h-9 px-2" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
-          </div>
           <Button
             variant="outline"
             onClick={() => {
-              const qs = new URLSearchParams();
-              if (dateRange.start) qs.set('start_date', dateRange.start);
-              if (dateRange.end) qs.set('end_date', dateRange.end);
-              window.open(`${API_URL}/reports/export/csv/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
+              // Show analytics selection dialog for CSV download
+              const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
+              const selected = prompt(`Select analytics to download CSV for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
+              if (selected) {
+                const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
+                const selectedAnalytics = indices.map(i => analytics[i]);
+                const qs = new URLSearchParams();
+                selectedAnalytics.forEach(a => qs.append('analytics', a));
+                window.open(`${API_URL}/reports/export/csv/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
+              }
             }}
           >
             <Download className="mr-2 h-4 w-4" />
@@ -96,13 +94,19 @@ const Reports = () => {
           </Button>
           <Button
             onClick={() => {
-              const qs = new URLSearchParams();
-              if (dateRange.start) qs.set('start_date', dateRange.start);
-              if (dateRange.end) qs.set('end_date', dateRange.end);
-              window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
+              // Show analytics selection dialog for PDF export
+              const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
+              const selected = prompt(`Select analytics to export PDF for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
+              if (selected) {
+                const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
+                const selectedAnalytics = indices.map(i => analytics[i]);
+                const qs = new URLSearchParams();
+                selectedAnalytics.forEach(a => qs.append('analytics', a));
+                window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
+              }
             }}
           >
-            <Download className="mr-2 h-4 w-4" />
+            <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
         </div>

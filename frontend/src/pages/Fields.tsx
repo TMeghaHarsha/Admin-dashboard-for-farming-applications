@@ -37,6 +37,8 @@ const Fields = () => {
     location_name: "",
     soil_type: "",
     is_active: true,
+    size_acres: "",
+    irrigation_method: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [irrigationMethods, setIrrigationMethods] = useState<any[]>([]);
@@ -109,7 +111,7 @@ const Fields = () => {
           <Plus className="mr-2 h-4 w-4" />
           Add Farm
         </Button>
-        <Button onClick={() => { setEditingField(null); setFormField({ name: "", farm: "", crop: "", crop_variety: "", device: "", location_name: "", soil_type: "", is_active: true }); setImageFile(null); setOpenFieldDialog(true); }}>
+        <Button onClick={() => { setEditingField(null); setFormField({ name: "", farm: "", crop: "", crop_variety: "", device: "", location_name: "", soil_type: "", is_active: true, size_acres: "", irrigation_method: "" }); setImageFile(null); setOpenFieldDialog(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           Add Field
         </Button>
@@ -156,10 +158,10 @@ const Fields = () => {
               <TableRow>
                 <TableHead>Field Name</TableHead>
                 <TableHead>Size</TableHead>
-                  <TableHead>Soil Type</TableHead>
+                <TableHead>Soil Type</TableHead>
                 <TableHead>Irrigation</TableHead>
-                <TableHead>Soil Health</TableHead>
-                <TableHead>Last Report</TableHead>
+                <TableHead>Crop Being Grown</TableHead>
+                <TableHead>Farm Location</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -167,16 +169,16 @@ const Fields = () => {
               {filteredFields.map((field) => (
                 <TableRow key={field.id}>
                   <TableCell className="font-medium">{field.name}</TableCell>
-                  <TableCell>{field.area?.hectares ? `${field.area.hectares} ha` : "-"}</TableCell>
+                  <TableCell>{field.size_acres ? `${field.size_acres} acres` : (field.area?.hectares ? `${field.area.hectares} ha` : "-")}</TableCell>
                   <TableCell>{field.soil_type_name || "-"}</TableCell>
-                  <TableCell>{field.irrigation || "-"}</TableCell>
+                  <TableCell>{field.irrigation_method_name || field.irrigation || "-"}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">—</Badge>
+                    <Badge variant="secondary">{field.crop_name || "-"}</Badge>
                   </TableCell>
-                  <TableCell>{field.updated_at?.slice(0,10) || "-"}</TableCell>
+                  <TableCell>{field.farm_name || field.location_name || "-"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => { setEditingField(field); setFormField({ name: field.name || "", farm: String(field.farm || ""), crop: String(field.crop || ""), crop_variety: String(field.crop_variety || ""), device: String(field.device || ""), location_name: field.location_name || "", soil_type: String(field.soil_type || ""), is_active: !!field.is_active }); setImageFile(null); setOpenFieldDialog(true); }}>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingField(field); setFormField({ name: field.name || "", farm: String(field.farm || ""), crop: String(field.crop || ""), crop_variety: String(field.crop_variety || ""), device: String(field.device || ""), location_name: field.location_name || "", soil_type: String(field.soil_type || ""), is_active: !!field.is_active, size_acres: field.size_acres || "", irrigation_method: String(field.irrigation_method || "") }); setImageFile(null); setOpenFieldDialog(true); }}>
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={async () => { if (!confirm("Delete this field?")) return; const res = await fetch(`${API_URL}/fields/${field.id}/`, { method: "DELETE", headers: authHeaders() }); if (res.ok) { toast.success("Field deleted"); loadData(); } else { toast.error("Failed to delete field"); } }}>
@@ -244,6 +246,24 @@ const Fields = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
+                <Label>Field Size (Acres) *</Label>
+                <Input 
+                  type="number" 
+                  value={formField.size_acres} 
+                  onChange={(e) => setFormField({ ...formField, size_acres: e.target.value })} 
+                  placeholder="Enter size in acres"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Irrigation Method *</Label>
+                <select className="border rounded-md h-10 px-3 w-full" value={formField.irrigation_method} onChange={(e) => setFormField({ ...formField, irrigation_method: e.target.value })}>
+                  <option value="" disabled>Select irrigation method</option>
+                  {irrigationMethods.map((m) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
                 <Label>Farm</Label>
                 <select className="border rounded-md h-10 px-3 w-full" value={formField.farm} onChange={(e) => setFormField({ ...formField, farm: e.target.value })}>
                   <option value="" disabled>Select farm</option>
@@ -289,6 +309,10 @@ const Fields = () => {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpenFieldDialog(false)}>Cancel</Button>
               <Button onClick={async () => {
+                if (!formField.name || !formField.size_acres || !formField.irrigation_method) {
+                  toast.error("Please fill in all required fields (Name, Size, and Irrigation Method)");
+                  return;
+                }
                 const isEdit = !!editingField;
                 const url = isEdit ? `${API_URL}/fields/${editingField.id}/` : `${API_URL}/fields/`;
                 let res: Response;
@@ -302,6 +326,8 @@ const Fields = () => {
                   form.append("location_name", formField.location_name || "");
                   form.append("soil_type", formField.soil_type ? String(Number(formField.soil_type)) : "");
                   form.append("is_active", String(!!formField.is_active));
+                  form.append("size_acres", formField.size_acres || "");
+                  form.append("irrigation_method", formField.irrigation_method ? String(Number(formField.irrigation_method)) : "");
                   form.append("image", imageFile);
                   res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { ...authHeaders() }, body: form });
                 } else {
@@ -314,6 +340,8 @@ const Fields = () => {
                     location_name: formField.location_name || null,
                     soil_type: formField.soil_type ? Number(formField.soil_type) : null,
                     is_active: !!formField.is_active,
+                    size_acres: formField.size_acres ? Number(formField.size_acres) : null,
+                    irrigation_method: formField.irrigation_method ? Number(formField.irrigation_method) : null,
                   };
                   res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
                 }

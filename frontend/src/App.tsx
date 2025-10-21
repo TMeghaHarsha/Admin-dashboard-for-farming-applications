@@ -10,7 +10,6 @@ import Dashboard from "./pages/Dashboard";
 import Crops from "./pages/Crops";
 import Fields from "./pages/Fields";
 import Subscriptions from "./pages/Subscriptions";
-import Practices from "./pages/Practices";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import { Layout } from "./components/Layout";
@@ -171,7 +170,6 @@ const App = () => (
           <Route path="/crops" element={<RequireUser><Layout><Crops /></Layout></RequireUser>} />
           <Route path="/fields" element={<RequireUser><Layout><Fields /></Layout></RequireUser>} />
           <Route path="/subscriptions" element={<RequireUser><Layout><Subscriptions /></Layout></RequireUser>} />
-          <Route path="/practices" element={<RequireUser><Layout><Practices /></Layout></RequireUser>} />
           <Route path="/reports" element={<RequireUser><Layout><Reports /></Layout></RequireUser>} />
           <Route path="/settings" element={<RequireUser><Layout><Settings /></Layout></RequireUser>} />
           {/* Admin routes share the unified login page */}

@@ -55,7 +55,7 @@ const Dashboard = () => {
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back!</h1>
-          {userRole && (
+          {userRole && userRole !== "End-App-User" && (
             <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide">
               <Shield className="h-3.5 w-3.5" />
               {userRole}
@@ -136,14 +136,10 @@ const Dashboard = () => {
           <CardDescription>Common tasks</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/crops?dialog=add')}>
               <Plus className="h-5 w-5" />
               <span>Add New Crop</span>
-            </Button>
-            <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/practices?dialog=add')}>
-              <FileText className="h-5 w-5" />
-              <span>Record Practice</span>
             </Button>
             <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/fields?dialog=soil')}>
               <Upload className="h-5 w-5" />
