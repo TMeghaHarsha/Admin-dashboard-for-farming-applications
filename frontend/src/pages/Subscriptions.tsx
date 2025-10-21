@@ -104,7 +104,7 @@ const Subscriptions = () => {
               <CardDescription>{currentPlanName === "Free" ? "No renewal required" : "Active"}</CardDescription>
             </div>
             <div className="text-right">
-              <p className="text-3xl font-bold text-primary">{userPlan?.plan?.price ? `$${userPlan.plan.price}` : "$0.00"}<span className="text-sm text-muted-foreground">/period</span></p>
+              <p className="text-3xl font-bold text-primary">{userPlan?.plan?.price ? `₹${userPlan.plan.price}` : "₹0.00"}<span className="text-sm text-muted-foreground">/period</span></p>
               <p className="text-sm text-muted-foreground">{userPlan?.end_date ? `Ends ${userPlan.end_date}` : "—"}</p>
             </div>
           </div>
@@ -127,7 +127,7 @@ const Subscriptions = () => {
                   <CardTitle>{plan.name}</CardTitle>
                   {plan.type === "main" && <Badge>Popular</Badge>}
                 </div>
-                <p className="text-3xl font-bold text-primary">${plan.price}<span className="text-sm text-muted-foreground">/{plan.duration}d</span></p>
+                <p className="text-3xl font-bold text-primary">₹{plan.price}<span className="text-sm text-muted-foreground">/{plan.duration}d</span></p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -271,7 +271,7 @@ const Subscriptions = () => {
                 <div key={p.id} className="flex items-center justify-between p-3 border rounded">
                   <div>
                     <p className="font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">${p.price} / {p.duration}d</p>
+                    <p className="text-xs text-muted-foreground">₹{p.price} / {p.duration}d</p>
                   </div>
                   <Button size="sm" onClick={() => setShowPlanDialog({ open: true, plan: p })}>View</Button>
                 </div>
@@ -283,7 +283,7 @@ const Subscriptions = () => {
               <div>
                 <p className="text-sm font-medium">Details</p>
                 <p className="text-sm text-muted-foreground">Duration: {showPlanDialog.plan.duration} days</p>
-                <p className="text-sm text-muted-foreground">Cost: ${showPlanDialog.plan.price}</p>
+                <p className="text-sm text-muted-foreground">Cost: ₹{showPlanDialog.plan.price}</p>
               </div>
               <div>
                 <p className="text-sm font-medium">Features</p>

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Check, Plus } from "lucide-react";
 
 const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
 
@@ -58,6 +59,34 @@ export default function AdminNotifications() {
     }
   };
 
+  const markAsRead = async (notificationId: number) => {
+    const res = await fetch(`${API_URL}/admin/notifications/${notificationId}/mark-read/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
+    });
+    if (res.ok) {
+      toast.success("Notification marked as read");
+      load();
+    } else {
+      toast.error("Failed to mark as read");
+    }
+  };
+
+  const markAllAsRead = async () => {
+    const unreadNotifications = items.filter(item => !item.is_read);
+    if (unreadNotifications.length === 0) {
+      toast.info("No unread notifications");
+      return;
+    }
+    
+    try {
+      await Promise.all(unreadNotifications.map(item => markAsRead(item.id)));
+      toast.success("All notifications marked as read");
+    } catch (error) {
+      toast.error("Failed to mark all as read");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -65,10 +94,18 @@ export default function AdminNotifications() {
           <h1 className="text-3xl font-bold text-foreground">Notifications</h1>
           <p className="text-muted-foreground">Manage and review all notifications</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>Create Notification</Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={markAllAsRead}>
+            <Check className="mr-2 h-4 w-4" />
+            Mark as Read
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Notification
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Create New Notification</DialogTitle>
@@ -126,6 +163,7 @@ export default function AdminNotifications() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -145,7 +183,18 @@ export default function AdminNotifications() {
                     <p className="font-semibold text-foreground">{n.message}</p>
                     <p className="text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</p>
                   </div>
-                  <Badge variant={n.is_read ? "secondary" : "default"}>{n.is_read ? "Read" : "Unread"}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={n.is_read ? "secondary" : "default"}>{n.is_read ? "Read" : "Unread"}</Badge>
+                    {!n.is_read && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => markAsRead(n.id)}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

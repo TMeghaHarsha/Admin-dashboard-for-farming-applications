@@ -26,14 +26,18 @@ const Crops = () => {
   const [crops, setCrops] = useState<{ id: number; name: string; icon_url?: string | null }[]>([]);
   const [varieties, setVarieties] = useState<{ id: number; crop: number; name: string; is_primary: boolean }[]>([]);
   const [openCropDialog, setOpenCropDialog] = useState(false);
-  const [openVarietyDialog, setOpenVarietyDialog] = useState(false);
-  const [openLifecycleDialog, setOpenLifecycleDialog] = useState(false);
   const [editingCrop, setEditingCrop] = useState<{ id: number; name: string; icon_url?: string | null } | null>(null);
-  const [editingVariety, setEditingVariety] = useState<{ id: number; crop: number; name: string; is_primary: boolean } | null>(null);
-  const [formCrop, setFormCrop] = useState({ name: "", icon_url: "", season: "" });
-  const [formVariety, setFormVariety] = useState({ crop: "", name: "", is_primary: false });
+  const [formCrop, setFormCrop] = useState({ 
+    name: "", 
+    icon_url: "", 
+    season: "", 
+    status: "", 
+    planted_date: "", 
+    variety: "", 
+    sowing_date: "", 
+    harvesting_date: "" 
+  });
   const [fields, setFields] = useState<any[]>([]);
-  const [lifecycle, setLifecycle] = useState({ field: "", sowing_date: "", growth_start_date: "", flowering_date: "", harvesting_date: "", yield_amount: "" });
   const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState({ has_variety: "", crop_id: "" });
 
@@ -74,11 +78,50 @@ const Crops = () => {
     if (params.get('dialog') === 'add') setOpenCropDialog(true);
   }, []);
 
-  const lifecycleStages = [
-    { stage: "Planting", count: 0, completion: "0%" },
-    { stage: "Growing", count: 0, completion: "0%" },
-    { stage: "Ready to Harvest", count: 0, completion: "0%" },
-  ];
+  const lifecycleStages = useMemo(() => {
+    const now = new Date();
+    const planting = crops.filter(crop => {
+      const plantedDate = crop.planted_date ? new Date(crop.planted_date) : null;
+      const sowingDate = crop.sowing_date ? new Date(crop.sowing_date) : null;
+      const harvestDate = crop.harvesting_date ? new Date(crop.harvesting_date) : null;
+      
+      if (!plantedDate && !sowingDate) return false;
+      
+      const startDate = plantedDate || sowingDate;
+      const daysSinceStart = Math.floor((now.getTime() - startDate!.getTime()) / (1000 * 60 * 60 * 24));
+      
+      return daysSinceStart <= 30; // Planting stage: first 30 days
+    }).length;
+    
+    const growing = crops.filter(crop => {
+      const plantedDate = crop.planted_date ? new Date(crop.planted_date) : null;
+      const sowingDate = crop.sowing_date ? new Date(crop.sowing_date) : null;
+      const harvestDate = crop.harvesting_date ? new Date(crop.harvesting_date) : null;
+      
+      if (!plantedDate && !sowingDate) return false;
+      
+      const startDate = plantedDate || sowingDate;
+      const daysSinceStart = Math.floor((now.getTime() - startDate!.getTime()) / (1000 * 60 * 60 * 24));
+      
+      return daysSinceStart > 30 && (!harvestDate || now < harvestDate);
+    }).length;
+    
+    const readyToHarvest = crops.filter(crop => {
+      const harvestDate = crop.harvesting_date ? new Date(crop.harvesting_date) : null;
+      if (!harvestDate) return false;
+      
+      const daysToHarvest = Math.floor((harvestDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return daysToHarvest <= 7 && daysToHarvest >= 0; // Ready to harvest: within 7 days
+    }).length;
+    
+    const total = crops.length;
+    
+    return [
+      { stage: "Planting", count: planting, completion: total > 0 ? `${Math.round((planting / total) * 100)}%` : "0%" },
+      { stage: "Growing", count: growing, completion: total > 0 ? `${Math.round((growing / total) * 100)}%` : "0%" },
+      { stage: "Ready to Harvest", count: readyToHarvest, completion: total > 0 ? `${Math.round((readyToHarvest / total) * 100)}%` : "0%" },
+    ];
+  }, [crops]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -100,13 +143,31 @@ const Crops = () => {
 
   const handleOpenNewCrop = () => {
     setEditingCrop(null);
-    setFormCrop({ name: "", icon_url: "" });
+    setFormCrop({ 
+      name: "", 
+      icon_url: "", 
+      season: "", 
+      status: "", 
+      planted_date: "", 
+      variety: "", 
+      sowing_date: "", 
+      harvesting_date: "" 
+    });
     setOpenCropDialog(true);
   };
 
   const handleOpenEditCrop = (crop: { id: number; name: string; icon_url?: string | null }) => {
     setEditingCrop(crop);
-    setFormCrop({ name: crop.name, icon_url: crop.icon_url || "" });
+    setFormCrop({ 
+      name: crop.name, 
+      icon_url: crop.icon_url || "", 
+      season: "", 
+      status: "", 
+      planted_date: "", 
+      variety: "", 
+      sowing_date: "", 
+      harvesting_date: "" 
+    });
     setOpenCropDialog(true);
   };
 
@@ -122,8 +183,20 @@ const Crops = () => {
   };
 
   const submitCrop = async () => {
-    if (!formCrop.name || !formCrop.season) { toast.error('Please fill required fields'); return; }
-    const payload = { name: formCrop.name, icon_url: formCrop.icon_url || null };
+    if (!formCrop.name || !formCrop.season || !formCrop.status || !formCrop.planted_date) { 
+      toast.error('Please fill all required fields'); 
+      return; 
+    }
+    const payload = { 
+      name: formCrop.name, 
+      icon_url: formCrop.icon_url || null,
+      season: formCrop.season,
+      status: formCrop.status,
+      planted_date: formCrop.planted_date,
+      variety: formCrop.variety,
+      sowing_date: formCrop.sowing_date,
+      harvesting_date: formCrop.harvesting_date
+    };
     const isEdit = !!editingCrop;
     const url = isEdit ? `${API_URL}/crops/${editingCrop!.id}/` : `${API_URL}/crops/`;
     const method = isEdit ? "PUT" : "POST";
@@ -154,76 +227,7 @@ const Crops = () => {
     setFormCrop({ name, icon_url: sampleCrops[name] || "" });
   };
 
-  const submitLifecycle = async () => {
-    if (!lifecycle.field) {
-      toast.error("Select a field");
-      return;
-    }
-    const res = await fetch(`${API_URL}/fields/${lifecycle.field}/update_lifecycle/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({
-        sowing_date: lifecycle.sowing_date || null,
-        growth_start_date: lifecycle.growth_start_date || null,
-        flowering_date: lifecycle.flowering_date || null,
-        harvesting_date: lifecycle.harvesting_date || null,
-        yield_amount: lifecycle.yield_amount ? Number(lifecycle.yield_amount) : null,
-      }),
-    });
-    if (res.ok) {
-      toast.success("Lifecycle updated");
-      setOpenLifecycleDialog(false);
-    } else {
-      toast.error("Failed to update lifecycle");
-    }
-  };
 
-  const handleOpenNewVariety = () => {
-    setEditingVariety(null);
-    setFormVariety({ crop: "", name: "", is_primary: false });
-    setOpenVarietyDialog(true);
-  };
-
-  const handleOpenEditVariety = (v: { id: number; crop: number; name: string; is_primary: boolean }) => {
-    setEditingVariety(v);
-    setFormVariety({ crop: String(v.crop), name: v.name, is_primary: v.is_primary });
-    setOpenVarietyDialog(true);
-  };
-
-  const handleDeleteVariety = async (id: number) => {
-    if (!confirm("Delete this variety?")) return;
-    const res = await fetch(`${API_URL}/crop-varieties/${id}/`, { method: "DELETE", headers: authHeaders() });
-    if (res.ok) {
-      toast.success("Variety deleted");
-      loadData();
-    } else {
-      toast.error("Failed to delete variety");
-    }
-  };
-
-  const submitVariety = async () => {
-    const payload = {
-      crop: Number(formVariety.crop),
-      name: formVariety.name,
-      is_primary: !!formVariety.is_primary,
-    };
-    const isEdit = !!editingVariety;
-    const url = isEdit ? `${API_URL}/crop-varieties/${editingVariety!.id}/` : `${API_URL}/crop-varieties/`;
-    const method = isEdit ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      toast.success(isEdit ? "Variety updated" : "Variety created");
-      setOpenVarietyDialog(false);
-      loadData();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.detail || "Failed to save variety");
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -233,10 +237,6 @@ const Crops = () => {
           <p className="text-muted-foreground">Manage your crops, varieties, and lifecycles</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleOpenNewVariety}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Variety
-          </Button>
           <Button onClick={handleOpenNewCrop}>
             <Plus className="mr-2 h-4 w-4" />
             Add Crop
@@ -292,6 +292,8 @@ const Crops = () => {
                 <TableHead>Season</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Planted Date</TableHead>
+                <TableHead>Sowing Date</TableHead>
+                <TableHead>Harvesting Date</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -299,12 +301,14 @@ const Crops = () => {
               {filteredCrops.map((crop) => (
                 <TableRow key={crop.id}>
                   <TableCell className="font-medium">{crop.name}</TableCell>
-                  <TableCell>{varieties.find((v) => v.crop === crop.id && v.is_primary)?.name || "-"}</TableCell>
-                  <TableCell>{/* season is not persisted on backend; show placeholder if missing */}{"—"}</TableCell>
+                  <TableCell>{crop.variety || varieties.find((v) => v.crop === crop.id && v.is_primary)?.name || "-"}</TableCell>
+                  <TableCell>{crop.season || "—"}</TableCell>
                   <TableCell>
-                    <Badge>—</Badge>
+                    <Badge variant={getStatusColor(crop.status)}>{crop.status || "—"}</Badge>
                   </TableCell>
-                  <TableCell>—</TableCell>
+                  <TableCell>{crop.planted_date || "—"}</TableCell>
+                  <TableCell>{crop.sowing_date || "—"}</TableCell>
+                  <TableCell>{crop.harvesting_date || "—"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditCrop(crop)}>
@@ -323,14 +327,9 @@ const Crops = () => {
       </Card>
 
       <Card>
-            <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Lifecycle Management</CardTitle>
-              <CardDescription>Track and update crop lifecycle stages</CardDescription>
-            </div>
-            <Button onClick={() => setOpenLifecycleDialog(true)}>Update Lifecycle</Button>
-          </div>
+        <CardHeader>
+          <CardTitle>Lifecycle Management</CardTitle>
+          <CardDescription>Track and update crop lifecycle stages</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
@@ -350,13 +349,13 @@ const Crops = () => {
       </Card>
 
       <Dialog open={openCropDialog} onOpenChange={setOpenCropDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingCrop ? "Edit Crop" : "Add Crop"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Name</Label>
+              <Label>Name *</Label>
               <div className="grid grid-cols-2 gap-2">
                 <Input value={formCrop.name} onChange={(e) => setFormCrop({ ...formCrop, name: e.target.value })} />
                 <select className="border rounded-md h-10 px-3" onChange={(e) => applySampleCrop(e.target.value)} defaultValue="">
@@ -365,16 +364,49 @@ const Crops = () => {
                 </select>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Season</Label>
-              <select className="border rounded-md h-10 px-3 w-full" value={formCrop.season} onChange={(e) => setFormCrop({ ...formCrop, season: e.target.value })}>
-                <option value="" disabled>Select season</option>
-                <option value="Kharif">Kharif</option>
-                <option value="Rabi">Rabi</option>
-                <option value="Zaid">Zaid</option>
-                <option value="Summer">Summer</option>
-                <option value="Winter">Winter</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Season *</Label>
+                <select className="border rounded-md h-10 px-3 w-full" value={formCrop.season} onChange={(e) => setFormCrop({ ...formCrop, season: e.target.value })}>
+                  <option value="" disabled>Select season</option>
+                  <option value="Kharif">Kharif</option>
+                  <option value="Rabi">Rabi</option>
+                  <option value="Zaid">Zaid</option>
+                  <option value="Summer">Summer</option>
+                  <option value="Winter">Winter</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status *</Label>
+                <select className="border rounded-md h-10 px-3 w-full" value={formCrop.status} onChange={(e) => setFormCrop({ ...formCrop, status: e.target.value })}>
+                  <option value="" disabled>Select status</option>
+                  <option value="Planting">Planting</option>
+                  <option value="Growing">Growing</option>
+                  <option value="Flowering">Flowering</option>
+                  <option value="Ready to Harvest">Ready to Harvest</option>
+                  <option value="Harvested">Harvested</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Planted Date *</Label>
+                <Input type="date" value={formCrop.planted_date} onChange={(e) => setFormCrop({ ...formCrop, planted_date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Variety</Label>
+                <Input value={formCrop.variety} onChange={(e) => setFormCrop({ ...formCrop, variety: e.target.value })} placeholder="Enter variety name" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Sowing Date</Label>
+                <Input type="date" value={formCrop.sowing_date} onChange={(e) => setFormCrop({ ...formCrop, sowing_date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Harvesting Date</Label>
+                <Input type="date" value={formCrop.harvesting_date} onChange={(e) => setFormCrop({ ...formCrop, harvesting_date: e.target.value })} />
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Icon URL</Label>
@@ -388,132 +420,7 @@ const Crops = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openLifecycleDialog} onOpenChange={setOpenLifecycleDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Lifecycle</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Field</Label>
-              <select className="border rounded-md h-10 px-3 w-full" value={lifecycle.field} onChange={(e) => setLifecycle({ ...lifecycle, field: e.target.value })}>
-                <option value="" disabled>Select field</option>
-                {fields.map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label>Sowing Date</Label>
-                <Input type="date" value={lifecycle.sowing_date} onChange={(e) => setLifecycle({ ...lifecycle, sowing_date: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Growth Start</Label>
-                <Input type="date" value={lifecycle.growth_start_date} onChange={(e) => setLifecycle({ ...lifecycle, growth_start_date: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Flowering Date</Label>
-                <Input type="date" value={lifecycle.flowering_date} onChange={(e) => setLifecycle({ ...lifecycle, flowering_date: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Harvesting Date</Label>
-                <Input type="date" value={lifecycle.harvesting_date} onChange={(e) => setLifecycle({ ...lifecycle, harvesting_date: e.target.value })} />
-              </div>
-              <div className="space-y-1 col-span-2">
-                <Label>Yield</Label>
-                <Input type="number" placeholder="0" value={lifecycle.yield_amount} onChange={(e) => setLifecycle({ ...lifecycle, yield_amount: e.target.value })} />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setOpenLifecycleDialog(false)}>Cancel</Button>
-              <Button onClick={submitLifecycle}>Save</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={openVarietyDialog} onOpenChange={setOpenVarietyDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingVariety ? "Edit Variety" : "Add Variety"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Crop</Label>
-              <select
-                className="border rounded-md h-10 px-3"
-                value={formVariety.crop}
-                onChange={(e) => setFormVariety({ ...formVariety, crop: e.target.value })}
-              >
-                <option value="" disabled>
-                  Select crop
-                </option>
-                {crops.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <select className="border rounded-md h-10 px-3 w-full" value={formVariety.name} onChange={(e) => setFormVariety({ ...formVariety, name: e.target.value })}>
-                <option value="" disabled>Select variety</option>
-                {/* Predefined varieties for popular crops */}
-                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Wheat')?.id) && (
-                  <>
-                    <option value="Durum">Durum</option>
-                    <option value="Hard Red">Hard Red</option>
-                    <option value="Soft White">Soft White</option>
-                  </>
-                )}
-                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Corn')?.id) && (
-                  <>
-                    <option value="Dent">Dent</option>
-                    <option value="Flint">Flint</option>
-                    <option value="Sweet">Sweet</option>
-                  </>
-                )}
-                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Rice')?.id) && (
-                  <>
-                    <option value="Basmati">Basmati</option>
-                    <option value="Jasmine">Jasmine</option>
-                    <option value="Arborio">Arborio</option>
-                  </>
-                )}
-                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Tomato')?.id) && (
-                  <>
-                    <option value="Roma">Roma</option>
-                    <option value="Beefsteak">Beefsteak</option>
-                    <option value="Cherry">Cherry</option>
-                  </>
-                )}
-                {String(formVariety.crop) === String(crops.find((x) => x.name === 'Soybean')?.id) && (
-                  <>
-                    <option value="Glycine Max A">Glycine Max A</option>
-                    <option value="Glycine Max B">Glycine Max B</option>
-                    <option value="Glycine Max C">Glycine Max C</option>
-                  </>
-                )}
-                {/* Fallback free text */}
-                <option value={formVariety.name || 'Custom'}>{formVariety.name ? `Use: ${formVariety.name}` : 'Custom...'}</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="is_primary"
-                type="checkbox"
-                checked={formVariety.is_primary}
-                onChange={(e) => setFormVariety({ ...formVariety, is_primary: e.target.checked })}
-              />
-              <Label htmlFor="is_primary">Primary variety</Label>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setOpenVarietyDialog(false)}>Cancel</Button>
-              <Button onClick={submitVariety}>{editingVariety ? "Update" : "Create"}</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

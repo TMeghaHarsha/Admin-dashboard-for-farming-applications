@@ -1,4 +1,4 @@
-import { Home, Sprout, Map, CreditCard, ClipboardList, BarChart3, Settings as SettingsIcon, Shield } from "lucide-react";
+import { Home, Sprout, Map, CreditCard, BarChart3, Settings as SettingsIcon, Shield } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { 
@@ -18,7 +18,6 @@ const defaultItems = [
   { key: "crops", title: "Crops", url: "/crops", icon: Sprout },
   { key: "fields", title: "Fields", url: "/fields", icon: Map },
   { key: "subscriptions", title: "Subscriptions", url: "/subscriptions", icon: CreditCard },
-  { key: "practices", title: "Practices", url: "/practices", icon: ClipboardList },
   { key: "reports", title: "Reports", url: "/reports", icon: BarChart3 },
   { key: "settings", title: "Settings", url: "/settings", icon: SettingsIcon },
 ];

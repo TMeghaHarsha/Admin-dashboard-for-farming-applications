@@ -20,23 +20,92 @@ const Dashboard = () => {
   useEffect(() => {
     const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
     const token = localStorage.getItem("token");
-    fetch(`${API_URL}/dashboard/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } })
-      .then(async (r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data) return;
-        const activeCrops = Number(data.active_crops || 0);
-        const fieldsCount = Number(data.active_fields || 0);
-        const planLabel = data.current_plan?.plan_name || "Free";
-        const totalHectares = Number(data.total_hectares || 0);
-        setStats([
-          { title: "Active Crops", value: String(activeCrops), icon: Sprout, description: "Currently growing", onClick: () => navigate("/crops") },
-          { title: "Current Subscription", value: planLabel, icon: CreditCard, description: "—", onClick: () => navigate("/subscriptions") },
-          { title: "Total Fields", value: String(fieldsCount), icon: Map, description: "", onClick: () => navigate("/fields") },
+    
+    const loadComprehensiveActivity = async () => {
+      try {
+        // Fetch all recent data in parallel
+        const [dashboardRes, cropsRes, fieldsRes, practicesRes] = await Promise.all([
+          fetch(`${API_URL}/dashboard/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } }),
+          fetch(`${API_URL}/crops/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } }),
+          fetch(`${API_URL}/fields/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } }),
+          fetch(`${API_URL}/irrigation-practices/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } })
         ]);
-        setPractices(Array.isArray(data.current_practices) ? data.current_practices : []);
-        setRecentActivity((data.recent_activity || []).map((a: any) => ({ action: a.description || a.action, time: new Date(a.created_at).toLocaleString() })));
-      })
-      .catch(() => {});
+
+        const dashboardData = dashboardRes.ok ? await dashboardRes.json() : null;
+        const cropsData = cropsRes.ok ? await cropsRes.json() : { results: [] };
+        const fieldsData = fieldsRes.ok ? await fieldsRes.json() : { results: [] };
+        const practicesData = practicesRes.ok ? await practicesRes.json() : { results: [] };
+
+        if (dashboardData) {
+          const activeCrops = Number(dashboardData.active_crops || 0);
+          const fieldsCount = Number(dashboardData.active_fields || 0);
+          const planLabel = dashboardData.current_plan?.plan_name || "Free";
+          
+          setStats([
+            { title: "Active Crops", value: String(activeCrops), icon: Sprout, description: "Currently growing", onClick: () => navigate("/crops") },
+            { title: "Current Subscription", value: planLabel, icon: CreditCard, description: "—", onClick: () => navigate("/subscriptions") },
+            { title: "Total Fields", value: String(fieldsCount), icon: Map, description: "", onClick: () => navigate("/fields") },
+          ]);
+          setPractices(Array.isArray(dashboardData.current_practices) ? dashboardData.current_practices : []);
+        }
+
+        // Build comprehensive recent activity
+        const recentActivityData = [];
+        
+        // Add recent crops (last 10)
+        const crops = Array.isArray(cropsData.results) ? cropsData.results : cropsData;
+        crops.slice(0, 10).forEach((crop: any) => {
+          recentActivityData.push({
+            action: `Added crop: ${crop.name}`,
+            time: new Date(crop.created_at).toLocaleString(),
+            type: 'crop'
+          });
+        });
+
+        // Add recent fields (last 10)
+        const fields = Array.isArray(fieldsData.results) ? fieldsData.results : fieldsData;
+        fields.slice(0, 10).forEach((field: any) => {
+          recentActivityData.push({
+            action: `Added field: ${field.name}`,
+            time: new Date(field.created_at).toLocaleString(),
+            type: 'field'
+          });
+        });
+
+        // Add recent practices (last 10)
+        const practices = Array.isArray(practicesData.results) ? practicesData.results : practicesData;
+        practices.slice(0, 10).forEach((practice: any) => {
+          const isScheduled = practice.scheduled_time && new Date(practice.scheduled_time) > new Date();
+          recentActivityData.push({
+            action: isScheduled 
+              ? `Scheduled irrigation: ${practice.irrigation_method_name || 'Practice'} for ${new Date(practice.scheduled_time).toLocaleDateString()}`
+              : `Recorded irrigation: ${practice.irrigation_method_name || 'Practice'}`,
+            time: new Date(practice.performed_at || practice.scheduled_time).toLocaleString(),
+            type: isScheduled ? 'scheduled' : 'practice'
+          });
+        });
+
+        // Add system activities from dashboard
+        if (dashboardData?.recent_activity) {
+          dashboardData.recent_activity.forEach((a: any) => {
+            recentActivityData.push({
+              action: a.description || a.action,
+              time: new Date(a.created_at).toLocaleString(),
+              type: 'system'
+            });
+          });
+        }
+
+        // Sort by time and take the most recent 15
+        recentActivityData.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        setRecentActivity(recentActivityData.slice(0, 15));
+      } catch (error) {
+        console.error('Error loading activity:', error);
+      }
+    };
+
+    loadComprehensiveActivity();
+    
     // Load role for display
     fetch(`${API_URL}/auth/me/`, { headers: { ...(token ? { Authorization: `Token ${token}` } : {}) } })
       .then((r) => (r.ok ? r.json() : null))
@@ -55,7 +124,7 @@ const Dashboard = () => {
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back!</h1>
-          {userRole && (
+          {userRole && userRole !== "End-App-User" && (
             <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide">
               <Shield className="h-3.5 w-3.5" />
               {userRole}
@@ -136,14 +205,10 @@ const Dashboard = () => {
           <CardDescription>Common tasks</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/crops?dialog=add')}>
               <Plus className="h-5 w-5" />
               <span>Add New Crop</span>
-            </Button>
-            <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/practices?dialog=add')}>
-              <FileText className="h-5 w-5" />
-              <span>Record Practice</span>
             </Button>
             <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => navigate('/fields?dialog=soil')}>
               <Upload className="h-5 w-5" />

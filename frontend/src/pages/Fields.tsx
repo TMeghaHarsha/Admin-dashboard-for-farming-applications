@@ -27,6 +27,8 @@ const Fields = () => {
   const [openIrrigationDialog, setOpenIrrigationDialog] = useState(false);
   const [openSoilReportDialog, setOpenSoilReportDialog] = useState(false);
   const [openSoilAnalysisDialog, setOpenSoilAnalysisDialog] = useState(false);
+  const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({ field: "", time: "", notes: "" });
   const [editingField, setEditingField] = useState<any | null>(null);
   const [formField, setFormField] = useState({
     name: "",
@@ -37,6 +39,8 @@ const Fields = () => {
     location_name: "",
     soil_type: "",
     is_active: true,
+    size_acres: "",
+    irrigation_method: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [irrigationMethods, setIrrigationMethods] = useState<any[]>([]);
@@ -77,7 +81,7 @@ const Fields = () => {
 
   const stats = [
     { title: "Total Fields", value: String(fields.length || 0), subtitle: `${Math.round((fields || []).reduce((a:number,f:any)=>a + (Number(f?.area?.hectares)||0), 0) * 2.47105)} acres total`, icon: MapIcon },
-    { title: "Irrigation Systems", value: String(irrigationMethods.length || 0), subtitle: `${irrigationMethods.length || 0} types in use`, icon: Droplets },
+    { title: "Irrigation Systems", value: String([...new Set(fields.map(f => f.irrigation_method_name).filter(Boolean))].length || 0), subtitle: `${[...new Set(fields.map(f => f.irrigation_method_name).filter(Boolean))].length || 0} types in use`, icon: Droplets },
     { title: "Soil Reports", value: "—", subtitle: "View in Soil Analysis", icon: FileText },
   ];
 
@@ -109,7 +113,7 @@ const Fields = () => {
           <Plus className="mr-2 h-4 w-4" />
           Add Farm
         </Button>
-        <Button onClick={() => { setEditingField(null); setFormField({ name: "", farm: "", crop: "", crop_variety: "", device: "", location_name: "", soil_type: "", is_active: true }); setImageFile(null); setOpenFieldDialog(true); }}>
+        <Button onClick={() => { setEditingField(null); setFormField({ name: "", farm: "", crop: "", crop_variety: "", device: "", location_name: "", soil_type: "", is_active: true, size_acres: "", irrigation_method: "" }); setImageFile(null); setOpenFieldDialog(true); }}>
           <Plus className="mr-2 h-4 w-4" />
           Add Field
         </Button>
@@ -156,10 +160,10 @@ const Fields = () => {
               <TableRow>
                 <TableHead>Field Name</TableHead>
                 <TableHead>Size</TableHead>
-                  <TableHead>Soil Type</TableHead>
+                <TableHead>Soil Type</TableHead>
                 <TableHead>Irrigation</TableHead>
-                <TableHead>Soil Health</TableHead>
-                <TableHead>Last Report</TableHead>
+                <TableHead>Crop Being Grown</TableHead>
+                <TableHead>Farm Location</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -167,16 +171,16 @@ const Fields = () => {
               {filteredFields.map((field) => (
                 <TableRow key={field.id}>
                   <TableCell className="font-medium">{field.name}</TableCell>
-                  <TableCell>{field.area?.hectares ? `${field.area.hectares} ha` : "-"}</TableCell>
+                  <TableCell>{field.size_acres ? `${field.size_acres} acres` : (field.area?.hectares ? `${field.area.hectares} ha` : "-")}</TableCell>
                   <TableCell>{field.soil_type_name || "-"}</TableCell>
-                  <TableCell>{field.irrigation || "-"}</TableCell>
+                  <TableCell>{field.irrigation_method_name || field.irrigation || "-"}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">—</Badge>
+                    <Badge variant="secondary">{field.crop_name || "-"}</Badge>
                   </TableCell>
-                  <TableCell>{field.updated_at?.slice(0,10) || "-"}</TableCell>
+                  <TableCell>{field.farm_name || field.location_name || "-"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => { setEditingField(field); setFormField({ name: field.name || "", farm: String(field.farm || ""), crop: String(field.crop || ""), crop_variety: String(field.crop_variety || ""), device: String(field.device || ""), location_name: field.location_name || "", soil_type: String(field.soil_type || ""), is_active: !!field.is_active }); setImageFile(null); setOpenFieldDialog(true); }}>
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingField(field); setFormField({ name: field.name || "", farm: String(field.farm || ""), crop: String(field.crop || ""), crop_variety: String(field.crop_variety || ""), device: String(field.device || ""), location_name: field.location_name || "", soil_type: String(field.soil_type || ""), is_active: !!field.is_active, size_acres: field.size_acres || "", irrigation_method: String(field.irrigation_method || "") }); setImageFile(null); setOpenFieldDialog(true); }}>
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={async () => { if (!confirm("Delete this field?")) return; const res = await fetch(`${API_URL}/fields/${field.id}/`, { method: "DELETE", headers: authHeaders() }); if (res.ok) { toast.success("Field deleted"); loadData(); } else { toast.error("Failed to delete field"); } }}>
@@ -219,13 +223,7 @@ const Fields = () => {
               <Droplets className="mr-2 h-4 w-4" />
               Set Irrigation Method
             </Button>
-            <Button variant="outline" className="w-full" onClick={async () => {
-              if (!fields.length) { toast.error('Add a field first'); return; }
-              const fieldId = fields[0].id; // simple demo selection; could open dialog
-              const now = new Date().toISOString();
-              const res = await fetch(`${API_URL}/irrigation-practices/`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ field: fieldId, irrigation_method: irrigationMethods[0]?.id || 1, notes: `Scheduled at ${now}` }) });
-              if (res.ok) { toast.success('Irrigation scheduled'); loadData(); } else { toast.error('Failed to schedule'); }
-            }}>
+            <Button variant="outline" className="w-full" onClick={() => setOpenScheduleDialog(true)}>
               <Droplets className="mr-2 h-4 w-4" />
               Schedule Irrigation
             </Button>
@@ -241,6 +239,24 @@ const Fields = () => {
             <div className="space-y-2">
               <Label>Name</Label>
               <Input value={formField.name} onChange={(e) => setFormField({ ...formField, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Field Size (Acres) *</Label>
+                <Input 
+                  type="number" 
+                  value={formField.size_acres} 
+                  onChange={(e) => setFormField({ ...formField, size_acres: e.target.value })} 
+                  placeholder="Enter size in acres"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Irrigation Method *</Label>
+                <select className="border rounded-md h-10 px-3 w-full" value={formField.irrigation_method} onChange={(e) => setFormField({ ...formField, irrigation_method: e.target.value })}>
+                  <option value="" disabled>Select irrigation method</option>
+                  {irrigationMethods.map((m) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
@@ -289,6 +305,10 @@ const Fields = () => {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpenFieldDialog(false)}>Cancel</Button>
               <Button onClick={async () => {
+                if (!formField.name || !formField.size_acres || !formField.irrigation_method) {
+                  toast.error("Please fill in all required fields (Name, Size, and Irrigation Method)");
+                  return;
+                }
                 const isEdit = !!editingField;
                 const url = isEdit ? `${API_URL}/fields/${editingField.id}/` : `${API_URL}/fields/`;
                 let res: Response;
@@ -302,6 +322,8 @@ const Fields = () => {
                   form.append("location_name", formField.location_name || "");
                   form.append("soil_type", formField.soil_type ? String(Number(formField.soil_type)) : "");
                   form.append("is_active", String(!!formField.is_active));
+                  form.append("size_acres", formField.size_acres || "");
+                  form.append("irrigation_method", formField.irrigation_method ? String(Number(formField.irrigation_method)) : "");
                   form.append("image", imageFile);
                   res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { ...authHeaders() }, body: form });
                 } else {
@@ -314,6 +336,8 @@ const Fields = () => {
                     location_name: formField.location_name || null,
                     soil_type: formField.soil_type ? Number(formField.soil_type) : null,
                     is_active: !!formField.is_active,
+                    size_acres: formField.size_acres ? Number(formField.size_acres) : null,
+                    irrigation_method: formField.irrigation_method ? Number(formField.irrigation_method) : null,
                   };
                   res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(payload) });
                 }
@@ -353,12 +377,34 @@ const Fields = () => {
               <Button variant="outline" onClick={() => setOpenIrrigationDialog(false)}>Cancel</Button>
               <Button onClick={async () => {
                 if (!irrigationForm.field || !irrigationForm.irrigation_method) { toast.error("Select field and method"); return; }
+                
+                // Update the field's irrigation method
+                const fieldUpdateRes = await fetch(`${API_URL}/fields/${irrigationForm.field}/`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json", ...authHeaders() },
+                  body: JSON.stringify({ irrigation_method: Number(irrigationForm.irrigation_method) }),
+                });
+                
+                if (!fieldUpdateRes.ok) {
+                  toast.error("Failed to update field irrigation method");
+                  return;
+                }
+                
+                // Record the irrigation practice
                 const res = await fetch(`${API_URL}/irrigation-practices/`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json", ...authHeaders() },
                   body: JSON.stringify({ field: Number(irrigationForm.field), irrigation_method: Number(irrigationForm.irrigation_method), notes: irrigationForm.notes || null }),
                 });
-                if (res.ok) { toast.success("Practice recorded"); setOpenIrrigationDialog(false); } else { toast.error("Failed to record practice"); }
+                
+                if (res.ok) { 
+                  toast.success("Irrigation method updated and practice recorded"); 
+                  setOpenIrrigationDialog(false);
+                  setIrrigationForm({ field: "", irrigation_method: "", notes: "" });
+                  loadData(); // Reload data to reflect changes
+                } else { 
+                  toast.error("Failed to record practice"); 
+                }
               }}>Save</Button>
             </div>
           </div>
@@ -420,6 +466,67 @@ const Fields = () => {
         fields={fields}
         authHeaders={authHeaders}
       />
+
+      {/* Schedule Irrigation Dialog */}
+      <Dialog open={openScheduleDialog} onOpenChange={setOpenScheduleDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule Irrigation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Field</Label>
+              <select className="border rounded-md h-10 px-3 w-full" value={scheduleForm.field} onChange={(e) => setScheduleForm({ ...scheduleForm, field: e.target.value })}>
+                <option value="" disabled>Select field</option>
+                {fields.map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Schedule Time</Label>
+              <Input 
+                type="datetime-local" 
+                value={scheduleForm.time} 
+                onChange={(e) => setScheduleForm({ ...scheduleForm, time: e.target.value })} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Input 
+                value={scheduleForm.notes} 
+                onChange={(e) => setScheduleForm({ ...scheduleForm, notes: e.target.value })} 
+                placeholder="Add any notes about this irrigation schedule"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOpenScheduleDialog(false)}>Cancel</Button>
+              <Button onClick={async () => {
+                if (!scheduleForm.field || !scheduleForm.time) { 
+                  toast.error("Please select field and time"); 
+                  return; 
+                }
+                const res = await fetch(`${API_URL}/irrigation-practices/`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", ...authHeaders() },
+                  body: JSON.stringify({ 
+                    field: Number(scheduleForm.field), 
+                    irrigation_method: fields.find(f => f.id == scheduleForm.field)?.irrigation_method || irrigationMethods[0]?.id || 1, 
+                    notes: scheduleForm.notes || `Scheduled for ${new Date(scheduleForm.time).toLocaleString()}`,
+                    scheduled_time: scheduleForm.time
+                  }),
+                });
+                if (res.ok) { 
+                  toast.success('Irrigation scheduled successfully'); 
+                  setOpenScheduleDialog(false);
+                  setScheduleForm({ field: "", time: "", notes: "" });
+                  loadData(); 
+                } else { 
+                  toast.error('Failed to schedule irrigation'); 
+                }
+              }}>Schedule</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Farm Dialog */}
       <Dialog open={openFarmDialog} onOpenChange={setOpenFarmDialog}>
