@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Base colors - Agricultural theme */
+    --background: 0 0% 100%;
+    --foreground: 155 25% 15%;
+
+    /* Card styling */
+    --card: 0 0% 100%;
+    --card-foreground: 155 25% 15%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 155 25% 15%;
+
+    /* Primary - Agricultural green */
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 142 71% 38%;
+    --primary-light: 142 50% 95%;
+
+    /* Secondary - Soft teal */
+    --secondary: 158 58% 92%;
+    --secondary-foreground: 155 25% 20%;
+    --secondary-hover: 158 58% 85%;
+
+    /* Muted */
+    --muted: 150 20% 96%;
+    --muted-foreground: 155 10% 45%;
+
+    /* Accent - Success green */
+    --accent: 142 71% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Status colors */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    /* Border and input */
+    --border: 150 15% 88%;
+    --input: 150 15% 88%;
+    --ring: 142 71% 45%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Sidebar - Agricultural theme */
+    --sidebar-background: 155 20% 98%;
+    --sidebar-foreground: 155 25% 20%;
+    --sidebar-primary: 142 71% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 142 50% 95%;
+    --sidebar-accent-foreground: 155 25% 20%;
+    --sidebar-border: 150 15% 90%;
+    --sidebar-ring: 142 71% 45%;
+
+    /* Custom shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    
+    /* Transitions */
+    --transition-base: all 0.2s ease-in-out;
+    --transition-slow: all 0.3s ease-in-out;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
