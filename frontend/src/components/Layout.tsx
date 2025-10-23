@@ -134,7 +134,7 @@ export function Layout({ children }: LayoutProps) {
                     <div>
                       <p className="font-semibold flex items-center gap-2">
                         {me?.full_name || "—"}
-                        {(me?.roles || []).length > 0 && (
+                        {(me?.roles || []).length > 0 && (me?.roles || [])[0] !== "End-App-User" && (
                           <span className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
                             <Shield className="h-3 w-3" />
                             {(me?.roles || [])[0]}

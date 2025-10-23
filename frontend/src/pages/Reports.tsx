@@ -109,16 +109,19 @@ const Reports = () => {
           <Button
             variant="outline"
             onClick={() => {
-              // Show analytics selection dialog for CSV download
               const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
               const selected = prompt(`Select analytics to download CSV for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
-              if (selected) {
-                const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
-                const selectedAnalytics = indices.map(i => analytics[i]);
-                const qs = new URLSearchParams();
-                selectedAnalytics.forEach(a => qs.append('analytics', a));
-                window.open(`${API_URL}/reports/export/csv/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
-              }
+              if (!selected) return;
+              const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
+              const selectedAnalytics = indices.map(i => analytics[i]);
+              const start = prompt('Start date (YYYY-MM-DD) - optional');
+              const end = prompt('End date (YYYY-MM-DD) - optional');
+              const qs = new URLSearchParams();
+              selectedAnalytics.forEach(a => qs.append('analytics', a));
+              if (start) qs.set('start_date', start);
+              if (end) qs.set('end_date', end);
+              if (token) qs.set('token', token);
+              window.open(`${API_URL}/reports/export/csv/?${qs.toString()}`, '_blank');
             }}
           >
             <Download className="mr-2 h-4 w-4" />
@@ -126,16 +129,19 @@ const Reports = () => {
           </Button>
           <Button
             onClick={() => {
-              // Show analytics selection dialog for PDF export
               const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
               const selected = prompt(`Select analytics to export PDF for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
-              if (selected) {
-                const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
-                const selectedAnalytics = indices.map(i => analytics[i]);
-                const qs = new URLSearchParams();
-                selectedAnalytics.forEach(a => qs.append('analytics', a));
-                window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}${token ? `&token=${token}` : ''}`, '_blank');
-              }
+              if (!selected) return;
+              const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
+              const selectedAnalytics = indices.map(i => analytics[i]);
+              const start = prompt('Start date (YYYY-MM-DD) - optional');
+              const end = prompt('End date (YYYY-MM-DD) - optional');
+              const qs = new URLSearchParams();
+              selectedAnalytics.forEach(a => qs.append('analytics', a));
+              if (start) qs.set('start_date', start);
+              if (end) qs.set('end_date', end);
+              if (token) qs.set('token', token);
+              window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}`, '_blank');
             }}
           >
             <FileDown className="mr-2 h-4 w-4" />
@@ -149,7 +155,6 @@ const Reports = () => {
           <Card key={stat.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              {stat.icon && <stat.icon className="h-4 w-4 text-muted-foreground" />}
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-primary">{stat.value}</div>

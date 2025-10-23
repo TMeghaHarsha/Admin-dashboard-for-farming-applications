@@ -125,15 +125,28 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 class FieldSerializer(serializers.ModelSerializer):
     soil_type_name = serializers.CharField(source="soil_type.name", read_only=True)
+    farm_name = serializers.CharField(source="farm.name", read_only=True)
+    crop_name = serializers.CharField(source="crop.name", read_only=True)
+    crop_variety_name = serializers.CharField(source="crop_variety.name", read_only=True)
+    irrigation_method_name = serializers.SerializerMethodField()
+    size_acres = serializers.SerializerMethodField()
+    current_sowing_date = serializers.SerializerMethodField()
+    current_growth_start_date = serializers.SerializerMethodField()
+    current_flowering_date = serializers.SerializerMethodField()
+    current_harvesting_date = serializers.SerializerMethodField()
+
     class Meta:
         model = Field
         fields = (
             "id",
             "name",
             "farm",
+            "farm_name",
             "device",
             "crop",
+            "crop_name",
             "crop_variety",
+            "crop_variety_name",
             "user",
             "boundary",
             "location_name",
@@ -141,12 +154,56 @@ class FieldSerializer(serializers.ModelSerializer):
             "soil_type",
             "soil_type_name",
             "image",
+            "irrigation_method_name",
+            "size_acres",
+            "current_sowing_date",
+            "current_growth_start_date",
+            "current_flowering_date",
+            "current_harvesting_date",
             "is_active",
             "is_locked",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("user", "created_at", "updated_at", "area")
+
+    def get_irrigation_method_name(self, obj):
+        try:
+            fim = FieldIrrigationMethod.objects.filter(field=obj).select_related("irrigation_method").first()
+            return getattr(getattr(fim, "irrigation_method", None), "name", None)
+        except Exception:
+            return None
+
+    def _latest_lifecycle(self, obj):
+        try:
+            return CropLifecycleDates.objects.filter(field=obj).order_by("-id").first()
+        except Exception:
+            return None
+
+    def get_current_sowing_date(self, obj):
+        lcd = self._latest_lifecycle(obj)
+        return getattr(lcd, "sowing_date", None)
+
+    def get_current_growth_start_date(self, obj):
+        lcd = self._latest_lifecycle(obj)
+        return getattr(lcd, "growth_start_date", None)
+
+    def get_current_flowering_date(self, obj):
+        lcd = self._latest_lifecycle(obj)
+        return getattr(lcd, "flowering_date", None)
+
+    def get_current_harvesting_date(self, obj):
+        lcd = self._latest_lifecycle(obj)
+        return getattr(lcd, "harvesting_date", None)
+
+    def get_size_acres(self, obj):
+        try:
+            hectares = (obj.area or {}).get("hectares")
+            if isinstance(hectares, (int, float)):
+                return round(float(hectares) * 2.47105, 4)
+        except Exception:
+            pass
+        return None
 
 
 class CropLifecycleDatesSerializer(serializers.ModelSerializer):
@@ -164,10 +221,18 @@ class FieldIrrigationMethodSerializer(serializers.ModelSerializer):
 class FieldIrrigationPracticeSerializer(serializers.ModelSerializer):
     field_name = serializers.CharField(source="field.name", read_only=True)
     method_name = serializers.CharField(source="irrigation_method.name", read_only=True)
+    scheduled_time = serializers.DateTimeField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = FieldIrrigationPractice
-        fields = ("id", "field", "field_name", "irrigation_method", "method_name", "notes", "performed_at")
+        fields = ("id", "field", "field_name", "irrigation_method", "method_name", "notes", "performed_at", "scheduled_time")
+
+    def create(self, validated_data):
+        # Map scheduled_time to performed_at if provided
+        scheduled = validated_data.pop("scheduled_time", None)
+        if scheduled and not validated_data.get("performed_at"):
+            validated_data["performed_at"] = scheduled
+        return super().create(validated_data)
 
 
 class SoilTextureSerializer(serializers.ModelSerializer):

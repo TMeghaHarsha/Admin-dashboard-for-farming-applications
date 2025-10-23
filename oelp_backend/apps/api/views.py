@@ -282,7 +282,6 @@ class MenuView(APIView):
             {"key": "crops", "label": "Crops"},
             {"key": "fields", "label": "Fields"},
             {"key": "subscriptions", "label": "Subscriptions"},
-            {"key": "practices", "label": "Practices"},
             {"key": "reports", "label": "Reports"},
             {"key": "settings", "label": "Settings"},
         ]
@@ -527,6 +526,41 @@ class FieldViewSet(viewsets.ModelViewSet):
         }
         obj, _ = CropLifecycleDates.objects.update_or_create(field=field, defaults=payload)
         return Response(CropLifecycleDatesSerializer(obj).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        # Allow updating Field normally, and handle irrigation_method specially
+        response = None
+        method_id = request.data.get("irrigation_method")
+        if method_id:
+            try:
+                field = self.get_object()
+                method = IrrigationMethods.objects.get(pk=method_id)
+                FieldIrrigationMethod.objects.update_or_create(field=field, defaults={"irrigation_method": method})
+            except IrrigationMethods.DoesNotExist:
+                return Response({"detail": "Invalid irrigation_method"}, status=status.HTTP_400_BAD_REQUEST)
+        # Proceed with default partial update for other fields
+        response = super().partial_update(request, *args, **kwargs)
+        # Return fresh serialized field with derived attributes
+        field = self.get_object()
+        return Response(FieldSerializer(field).data)
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        obj_id = obj.pk
+        resp = super().destroy(request, *args, **kwargs)
+        # Record activity
+        try:
+            ct = ContentType.objects.get_for_model(obj.__class__)
+            UserActivity.objects.create(
+                user=request.user,
+                action="delete",
+                content_type=ct,
+                object_id=obj_id,
+                description=f"Field delete",
+            )
+        except Exception:
+            pass
+        return resp
 
     @action(detail=True, methods=["post"], url_path="set_irrigation_method")
     def set_irrigation_method(self, request, pk=None):
