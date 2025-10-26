@@ -1,112 +1,104 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shield, DollarSign, Users, Map, UserCheck } from "lucide-react";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 
 const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState({ 
     total_revenue: 0, 
-    active_users: 0, 
+    active_end_users: 0, 
     total_fields: 0, 
-    active_managers: 0 
+    active_admins: 0 
   });
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [roleTitle, setRoleTitle] = useState<string>("Admin");
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [fields, setFields] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    
-    const loadData = async () => {
+
+    (async () => {
       try {
-        // Fetch all data in parallel
-        const [analyticsRes, usersRes, fieldsRes, subscriptionsRes] = await Promise.all([
+        const [adminRes, txRes, fieldsRes, notiRes] = await Promise.all([
           fetch(`${API_URL}/admin/analytics/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${API_URL}/users/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${API_URL}/fields/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${API_URL}/subscriptions/`, { headers: { Authorization: `Token ${token}` } })
+          fetch(`${API_URL}/transactions/`, { headers: { Authorization: `Token ${token}` } }),
+          fetch(`${API_URL}/admin/fields/`, { headers: { Authorization: `Token ${token}` } }),
+          fetch(`${API_URL}/admin/notifications/`, { headers: { Authorization: `Token ${token}` } }),
         ]);
-
-        const analyticsData = analyticsRes.ok ? await analyticsRes.json() : {};
-        const usersData = usersRes.ok ? await usersRes.json() : { results: [] };
-        const fieldsData = fieldsRes.ok ? await fieldsRes.json() : { results: [] };
-        const subscriptionsData = subscriptionsRes.ok ? await subscriptionsRes.json() : { results: [] };
-
-        const users = Array.isArray(usersData.results) ? usersData.results : usersData;
-        const fields = Array.isArray(fieldsData.results) ? fieldsData.results : fieldsData;
-        const subscriptions = Array.isArray(subscriptionsData.results) ? subscriptionsData.results : subscriptionsData;
-
-        // Calculate metrics
-        const activeUsers = users.filter((u: any) => u.is_active !== false).length;
-        const activeManagers = users.filter((u: any) => 
-          u.roles && u.roles.some((r: string) => ['Admin', 'Manager'].includes(r))
-        ).length;
-        
-        // Calculate total revenue from subscriptions
-        const totalRevenue = subscriptions.reduce((sum: number, sub: any) => {
-          return sum + (Number(sub.plan?.price) || 0);
-        }, 0);
-
-        setMetrics({
-          total_revenue: totalRevenue,
-          active_users: activeUsers,
-          total_fields: fields.length,
-          active_managers: activeManagers
-        });
-
-        // Build recent activity
-        const activityData = [];
-        
-        // Add recent users
-        users.slice(0, 5).forEach((user: any) => {
-          activityData.push({
-            action: `New user registered: ${user.full_name || user.email}`,
-            time: new Date(user.date_joined).toLocaleString(),
-            type: 'user'
-          });
-        });
-
-        // Add recent fields
-        fields.slice(0, 5).forEach((field: any) => {
-          activityData.push({
-            action: `New field added: ${field.name}`,
-            time: new Date(field.created_at).toLocaleString(),
-            type: 'field'
-          });
-        });
-
-        // Sort by time and take the most recent 10
-        activityData.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-        setRecentActivity(activityData.slice(0, 10));
-
-      } catch (error) {
-        console.error('Error loading admin data:', error);
+        const data = adminRes.ok ? await adminRes.json() : null;
+        const txJson = txRes.ok ? await txRes.json() : null;
+        const fieldsJson = fieldsRes.ok ? await fieldsRes.json() : null;
+        const notiJson = notiRes.ok ? await notiRes.json() : null;
+        if (data) {
+          const roleNames = Array.isArray(data.role_names) ? data.role_names : [];
+          const firstRole = roleNames.find((r: string) => ["SuperAdmin","Admin","Analyst","Business","Developer","Support","Agronomist"].includes(r)) || "Admin";
+          setRoleTitle(firstRole);
+          const s = data.stats || {};
+          setMetrics({
+            total_revenue: Number(s.total_revenue) || 0,
+            active_end_users: Number(s.active_end_users) || 0,
+            total_fields: Number(s.total_fields) || 0,
+            active_admins: Number(s.active_admins) || 0,
+          } as any);
+          setRecentActivity(Array.isArray(data.recent_activity) ? data.recent_activity : []);
+        }
+        setTransactions(Array.isArray(txJson?.results) ? txJson.results : (txJson || []));
+        setFields(Array.isArray(fieldsJson?.results) ? fieldsJson.results : (fieldsJson || []));
+        setNotifications(Array.isArray(notiJson?.results) ? notiJson.results : (notiJson || []));
+      } catch (e) {
+        // noop
       }
-    };
-
-    loadData();
-    
-    fetch(`${API_URL}/auth/me/`, { headers: { Authorization: `Token ${token}` } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((me) => {
-        const roles = Array.isArray(me?.roles) ? me.roles : [];
-        setUserRole(roles[0] || null);
-      })
-      .catch(() => {});
+    })();
   }, []);
+
+  // Build monthly datasets (YYYY-MM)
+  const revenueTrend = useMemo(() => {
+    const map: Record<string, number> = {};
+    transactions
+      .filter((t:any) => ["success","paid","completed"].includes((t.status||"").toLowerCase()))
+      .forEach((t:any) => {
+        const m = (t.created_at || "").slice(0,7);
+        if (!m) return;
+        const amt = Number(t.amount) || 0;
+        map[m] = (map[m] || 0) + amt;
+      });
+    return Object.keys(map).sort().map(m => ({ month: m, amount: map[m] }));
+  }, [transactions]);
+
+  const fieldsCreated = useMemo(() => {
+    const map: Record<string, number> = {};
+    fields.forEach((f:any) => {
+      const m = (f.created_at || "").slice(0,7);
+      if (!m) return;
+      map[m] = (map[m] || 0) + 1;
+    });
+    return Object.keys(map).sort().map(m => ({ month: m, count: map[m] }));
+  }, [fields]);
+
+  const notificationsSent = useMemo(() => {
+    const map: Record<string, number> = {};
+    notifications.forEach((n:any) => {
+      const m = (n.created_at || "").slice(0,7);
+      if (!m) return;
+      map[m] = (map[m] || 0) + 1;
+    });
+    return Object.keys(map).sort().map(m => ({ month: m, count: map[m] }));
+  }, [notifications]);
 
   return (
     <div className="space-y-6">
       <div>
         <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
-          {userRole && (
-            <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide">
-              <Shield className="h-3.5 w-3.5" />
-              {userRole}
-            </span>
-          )}
+          <h1 className="text-3xl font-bold text-foreground">{roleTitle} Dashboard</h1>
+          <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide">
+            <Shield className="h-3.5 w-3.5" />
+            {roleTitle}
+          </span>
         </div>
         <p className="text-muted-foreground">Overview of platform activity</p>
       </div>
@@ -125,11 +117,11 @@ export default function AdminDashboard() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+            <CardTitle className="text-sm font-medium">Active End Users</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{metrics.active_users}</div>
+            <div className="text-2xl font-bold text-primary">{metrics.active_end_users}</div>
             <p className="text-xs text-muted-foreground">End users</p>
           </CardContent>
         </Card>
@@ -151,7 +143,7 @@ export default function AdminDashboard() {
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{metrics.active_managers}</div>
+            <div className="text-2xl font-bold text-primary">{metrics.active_admins}</div>
             <p className="text-xs text-muted-foreground">Admins & Managers</p>
           </CardContent>
         </Card>
@@ -165,10 +157,10 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentActivity.map((activity, index) => (
+              {recentActivity.map((a:any, index:number) => (
                 <div key={index} className="flex justify-between items-center">
-                  <p className="text-sm">{activity.action}</p>
-                  <p className="text-xs text-muted-foreground">{activity.time}</p>
+                  <p className="text-sm">{a.description || a.action}</p>
+                  <p className="text-xs text-muted-foreground">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</p>
                 </div>
               ))}
               {recentActivity.length === 0 && (
@@ -180,24 +172,57 @@ export default function AdminDashboard() {
         
         <Card>
           <CardHeader>
-            <CardTitle>Platform Analytics</CardTitle>
-            <CardDescription>Key performance indicators</CardDescription>
+            <CardTitle>Revenue Trend</CardTitle>
+            <CardDescription>Monthly successful transactions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex justify-between">
-                <span className="text-sm">User Growth Rate</span>
-                <span className="text-sm font-medium">+12%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm">Field Utilization</span>
-                <span className="text-sm font-medium">85%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm">Revenue Growth</span>
-                <span className="text-sm font-medium">+8%</span>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={revenueTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Line type="monotone" dataKey="amount" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Fields Created</CardTitle>
+            <CardDescription>New fields per month</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={fieldsCreated}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="hsl(var(--chart-2))" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Notifications Sent</CardTitle>
+            <CardDescription>Per month</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={notificationsSent}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="hsl(var(--chart-3))" />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>

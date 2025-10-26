@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminTopbar } from "./AdminTopbar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   return (
@@ -10,7 +11,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         <AdminSidebar />
         <div className="flex flex-1 flex-col">
           <AdminTopbar />
-          <main className="flex-1 p-6">{children}</main>
+          <ErrorBoundary>
+            <main className="flex-1 p-6">{children}</main>
+          </ErrorBoundary>
         </div>
       </div>
     </SidebarProvider>

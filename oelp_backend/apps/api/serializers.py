@@ -26,6 +26,7 @@ from apps.models_app.user_plan import (
 
 class UserSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
@@ -38,6 +39,7 @@ class UserSerializer(serializers.ModelSerializer):
             "avatar",
             "date_joined",
             "roles",
+            "created_by_name",
         )
 
     def get_roles(self, obj):
@@ -45,6 +47,23 @@ class UserSerializer(serializers.ModelSerializer):
             return list(obj.user_roles.select_related("role").values_list("role__name", flat=True))
         except Exception:
             return []
+
+    def get_created_by_name(self, obj):
+        try:
+            from django.contrib.contenttypes.models import ContentType
+            ct = ContentType.objects.get_for_model(obj.__class__)
+            act = (
+                UserActivity.objects
+                .filter(content_type=ct, object_id=obj.pk, action__in=["create"])  # created
+                .order_by("id")
+                .select_related("user")
+                .first()
+            )
+            if act and act.user:
+                return act.user.full_name or act.user.username or None
+        except Exception:
+            pass
+        return None
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -129,6 +148,7 @@ class FieldSerializer(serializers.ModelSerializer):
     crop_name = serializers.CharField(source="crop.name", read_only=True)
     crop_variety_name = serializers.CharField(source="crop_variety.name", read_only=True)
     irrigation_method_name = serializers.SerializerMethodField()
+    irrigation_method_id = serializers.SerializerMethodField()
     size_acres = serializers.SerializerMethodField()
     current_sowing_date = serializers.SerializerMethodField()
     current_growth_start_date = serializers.SerializerMethodField()
@@ -156,6 +176,7 @@ class FieldSerializer(serializers.ModelSerializer):
             "image",
             "irrigation_method_name",
             "size_acres",
+            "irrigation_method_id",
             "current_sowing_date",
             "current_growth_start_date",
             "current_flowering_date",
@@ -171,6 +192,13 @@ class FieldSerializer(serializers.ModelSerializer):
         try:
             fim = FieldIrrigationMethod.objects.filter(field=obj).select_related("irrigation_method").first()
             return getattr(getattr(fim, "irrigation_method", None), "name", None)
+        except Exception:
+            return None
+
+    def get_irrigation_method_id(self, obj):
+        try:
+            fim = FieldIrrigationMethod.objects.filter(field=obj).select_related("irrigation_method").first()
+            return getattr(getattr(fim, "irrigation_method", None), "id", None)
         except Exception:
             return None
 
@@ -221,6 +249,7 @@ class FieldIrrigationMethodSerializer(serializers.ModelSerializer):
 class FieldIrrigationPracticeSerializer(serializers.ModelSerializer):
     field_name = serializers.CharField(source="field.name", read_only=True)
     method_name = serializers.CharField(source="irrigation_method.name", read_only=True)
+    irrigation_method = serializers.PrimaryKeyRelatedField(queryset=IrrigationMethods.objects.all(), required=False, allow_null=True)
     scheduled_time = serializers.DateTimeField(write_only=True, required=False, allow_null=True)
 
     class Meta:
@@ -232,6 +261,14 @@ class FieldIrrigationPracticeSerializer(serializers.ModelSerializer):
         scheduled = validated_data.pop("scheduled_time", None)
         if scheduled and not validated_data.get("performed_at"):
             validated_data["performed_at"] = scheduled
+        # Default irrigation_method from field current method if not provided
+        if not validated_data.get("irrigation_method") and validated_data.get("field"):
+            try:
+                fim = FieldIrrigationMethod.objects.filter(field=validated_data["field"]).select_related("irrigation_method").first()
+                if fim and fim.irrigation_method:
+                    validated_data["irrigation_method"] = fim.irrigation_method
+            except Exception:
+                pass
         return super().create(validated_data)
 
 

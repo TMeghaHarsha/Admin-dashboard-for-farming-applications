@@ -16,10 +16,15 @@ interface NotificationRow { id: number; message: string; receiver?: any; created
 export default function AdminNotifications() {
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [open, setOpen] = useState(false);
-  const [payload, setPayload] = useState({ receiver: "", message: "" });
-  const [template, setTemplate] = useState<string>("");
+  const [payload, setPayload] = useState({ receiver: "__REQUIRED__", message: "" });
+  const [cause, setCause] = useState<string>("");
   const [targetRoles, setTargetRoles] = useState<string[]>([]);
   const [me, setMe] = useState<{ roles?: string[] } | null>(null);
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [scheduleType, setScheduleType] = useState<"immediate" | "recurring" | "windowed">("immediate");
+  const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [windowStart, setWindowStart] = useState<string>("");
+  const [windowEnd, setWindowEnd] = useState<string>("");
 
   const token = localStorage.getItem("token");
 
@@ -36,21 +41,43 @@ export default function AdminNotifications() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setMe(d))
       .catch(() => {});
+    // Load admins for SuperAdmin to target specific admin
+    fetch(`${API_URL}/admin/users/`, { headers: { Authorization: `Token ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const arr = Array.isArray(d?.results) ? d.results : d || [];
+        setAdmins(arr.filter((u:any) => (u.roles||[]).includes('Admin')));
+      })
+      .catch(() => {});
   }, []);
 
   const create = async () => {
     if (!payload.message) { toast.error("Message required"); return; }
+    if (!admins.some((a:any) => String(a.id) === String(payload.receiver))) {
+      toast.error("Select an Admin recipient");
+      return;
+    }
+    const body: any = { message: payload.message };
+    body.receiver = payload.receiver;
+    if (targetRoles.length) body.target_roles = targetRoles;
+    if (scheduleType === "recurring") body.schedule = { type: scheduleType, recurrence };
+    if (scheduleType === "windowed") body.schedule = { type: scheduleType, start: windowStart || undefined, end: windowEnd || undefined };
+
     const res = await fetch(`${API_URL}/admin/notifications/`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Token ${token}` },
-      body: JSON.stringify({ message: payload.message, receiver: payload.receiver || undefined, target_roles: targetRoles.length ? targetRoles : undefined }),
+      body: JSON.stringify(body),
     });
     if (res.ok) {
       toast.success("Notification sent");
       setOpen(false);
-      setPayload({ receiver: "", message: "" });
-      setTemplate("");
+      setPayload({ receiver: "__REQUIRED__", message: "" });
+      setCause("");
       setTargetRoles([]);
+      setScheduleType("immediate");
+      setRecurrence("daily");
+      setWindowStart("");
+      setWindowEnd("");
       load();
     } else {
       let errText = "Failed to send";
@@ -101,7 +128,7 @@ export default function AdminNotifications() {
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button type="button" onClick={() => setOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Notification
               </Button>
@@ -111,33 +138,34 @@ export default function AdminNotifications() {
               <DialogTitle>Create New Notification</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              
               <div className="space-y-2">
-                <Label>Template</Label>
-                <Select value={template} onValueChange={(v) => {
-                  setTemplate(v);
-                  // Define flows per requirements
-                  const map: Record<string, string[]> = {
-                    admin_to_manager: ["Admin"],
-                    manager_to_all: ["SuperAdmin", "Business", "Analyst", "Agronomist", "Development", "Support", "End-App-User"],
-                    business_to_manager_support_user: ["Admin", "Support", "End-App-User"],
-                    analyst_to_manager_support_user: ["Admin", "Support", "End-App-User"],
-                    development_to_manager_support_user: ["Admin", "Support", "End-App-User"],
-                    agronomist_to_manager_support_user: ["Admin", "Support", "End-App-User"],
-                    support_to_all_except_superadmin: ["Admin", "Business", "Analyst", "Agronomist", "Development", "Support", "End-App-User"],
+                <Label>Cause</Label>
+                <Select value={cause} onValueChange={(v) => {
+                  setCause(v);
+                  const defaults: Record<string,string> = {
+                    policy_non_compliance: "Policy Non-Compliance: Please address the noted deviations immediately.",
+                    report_delay: "Report Delay: Kindly submit the pending report as per the agreed timeline.",
+                    performance_issue: "Performance Alert: Review your recent performance metrics and action items.",
+                    billing_discrepancy: "Billing Discrepancy: A mismatch was detected. Please verify and correct.",
+                    access_request: "Access Request: Please provision or confirm access for the requested resource.",
+                    maintenance: "Planned Maintenance: System will be unavailable during the specified window.",
+                    security_alert: "Security Alert: Unusual activity detected. Please review and confirm.",
                   };
-                  setTargetRoles(map[v] || []);
+                  const msg = defaults[v] || "";
+                  setPayload((p) => ({ ...p, message: msg }));
                 }}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a template (optional)" />
+                    <SelectValue placeholder="Select a cause" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin_to_manager">Admin → Manager</SelectItem>
-                    <SelectItem value="manager_to_all">Manager → Super-Admin, Business, Analyst, Agronomist, Development, Support, User</SelectItem>
-                    <SelectItem value="business_to_manager_support_user">Business → Manager, Support, User</SelectItem>
-                    <SelectItem value="analyst_to_manager_support_user">Analyst → Manager, Support, User</SelectItem>
-                    <SelectItem value="development_to_manager_support_user">Development → Manager, Support, User</SelectItem>
-                    <SelectItem value="agronomist_to_manager_support_user">Agronomist → Manager, Support, User</SelectItem>
-                    <SelectItem value="support_to_all_except_superadmin">Support → All except Super-Admin</SelectItem>
+                    <SelectItem value="policy_non_compliance">Policy Non-Compliance</SelectItem>
+                    <SelectItem value="report_delay">Report Delay</SelectItem>
+                    <SelectItem value="performance_issue">Performance Issue</SelectItem>
+                    <SelectItem value="billing_discrepancy">Billing Discrepancy</SelectItem>
+                    <SelectItem value="access_request">Access Request</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="security_alert">Security Alert</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -145,13 +173,51 @@ export default function AdminNotifications() {
                 <Label>Recipient</Label>
                 <Select value={payload.receiver} onValueChange={(v) => setPayload({ ...payload, receiver: v })}>
                   <SelectTrigger>
-                    <SelectValue placeholder="All (default to self)" />
+                    <SelectValue placeholder="Select Admin" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    {admins.map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>{a.full_name || a.email || a.username}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Scheduling</Label>
+                <Select value={scheduleType} onValueChange={(v:any) => setScheduleType(v)}>
+                  <SelectTrigger><SelectValue placeholder="Immediate" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="immediate">Immediate</SelectItem>
+                    <SelectItem value="recurring">Recurring</SelectItem>
+                    <SelectItem value="windowed">Windowed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {scheduleType === "recurring" && (
+                <div className="space-y-2">
+                  <Label>Recurrence</Label>
+                  <Select value={recurrence} onValueChange={(v:any) => setRecurrence(v)}>
+                    <SelectTrigger><SelectValue placeholder="Daily" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {scheduleType === "windowed" && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Start</Label>
+                    <input type="datetime-local" className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End</Label>
+                    <input type="datetime-local" className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Message</Label>
                 <Textarea rows={4} value={payload.message} onChange={(e) => setPayload({ ...payload, message: e.target.value })} />

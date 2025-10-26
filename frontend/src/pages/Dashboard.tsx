@@ -49,56 +49,20 @@ const Dashboard = () => {
           setPractices(Array.isArray(dashboardData.current_practices) ? dashboardData.current_practices : []);
         }
 
-        // Build comprehensive recent activity
-        const recentActivityData = [];
-        
-        // Add recent crops (last 10)
-        const crops = Array.isArray(cropsData.results) ? cropsData.results : cropsData;
-        crops.slice(0, 10).forEach((crop: any) => {
-          recentActivityData.push({
-            action: `Added crop: ${crop.name}`,
-            time: new Date(crop.created_at).toLocaleString(),
-            type: 'crop'
-          });
-        });
-
-        // Add recent fields (last 10)
-        const fields = Array.isArray(fieldsData.results) ? fieldsData.results : fieldsData;
-        fields.slice(0, 10).forEach((field: any) => {
-          recentActivityData.push({
-            action: `Added field: ${field.name}`,
-            time: new Date(field.created_at).toLocaleString(),
-            type: 'field'
-          });
-        });
-
-        // Add recent practices (last 10)
-        const practices = Array.isArray(practicesData.results) ? practicesData.results : practicesData;
-        practices.slice(0, 10).forEach((practice: any) => {
-          const isScheduled = practice.scheduled_time && new Date(practice.scheduled_time) > new Date();
-          recentActivityData.push({
-            action: isScheduled 
-              ? `Scheduled irrigation: ${practice.irrigation_method_name || 'Practice'} for ${new Date(practice.scheduled_time).toLocaleDateString()}`
-              : `Recorded irrigation: ${practice.irrigation_method_name || 'Practice'}`,
-            time: new Date(practice.performed_at || practice.scheduled_time).toLocaleString(),
-            type: isScheduled ? 'scheduled' : 'practice'
-          });
-        });
-
-        // Add system activities from dashboard
+        // Build recent activity from system activity (CRUD) and limit to latest 6
+        const recentActivityData: any[] = [];
         if (dashboardData?.recent_activity) {
           dashboardData.recent_activity.forEach((a: any) => {
             recentActivityData.push({
               action: a.description || a.action,
+              timestamp: a.created_at,
               time: new Date(a.created_at).toLocaleString(),
               type: 'system'
             });
           });
         }
-
-        // Sort by time and take the most recent 15
-        recentActivityData.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-        setRecentActivity(recentActivityData.slice(0, 15));
+        recentActivityData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setRecentActivity(recentActivityData.slice(0, 6));
       } catch (error) {
         console.error('Error loading activity:', error);
       }

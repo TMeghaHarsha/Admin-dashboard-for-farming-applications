@@ -126,6 +126,18 @@ class MeView(APIView):
             if key in allowed_fields:
                 setattr(user, key, value)
         user.save()
+        # Record profile update in activity log
+        try:
+            ct = ContentType.objects.get_for_model(user.__class__)
+            UserActivity.objects.create(
+                user=user,
+                action="update",
+                content_type=ct,
+                object_id=user.pk,
+                description="Profile updated",
+            )
+        except Exception:
+            pass
         return Response(UserSerializer(user).data)
 
 
@@ -293,7 +305,7 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
 
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Development"]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Developer"]
 
     def get_queryset(self):
         return CustomUser.objects.all().order_by("-date_joined")
@@ -302,6 +314,25 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         from .serializers import UserSerializer as _UserSerializer
 
         return _UserSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+        obj_id = user.pk
+        obj_name = user.full_name or user.username or str(user.pk)
+        resp = super().destroy(request, *args, **kwargs)
+        # Record deletion activity by actor
+        try:
+            ct = ContentType.objects.get_for_model(user.__class__)
+            UserActivity.objects.create(
+                user=request.user,
+                action="delete",
+                content_type=ct,
+                object_id=obj_id,
+                description=f"Deleted admin: {obj_name}",
+            )
+        except Exception:
+            pass
+        return resp
 
     @action(detail=True, methods=["post"], url_path="assign-role")
     def assign_role(self, request, pk=None):
@@ -336,11 +367,113 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(user)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["post"], url_path="create-admin")
+    def create_admin(self, request):
+        # Only SuperAdmin can create Admin accounts
+        roles = set(request.user.user_roles.select_related("role").values_list("role__name", flat=True))
+        if not (request.user.is_superuser or ("SuperAdmin" in roles)):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        full_name = request.data.get("full_name") or request.data.get("name")
+        raw_username = request.data.get("username")
+        password = request.data.get("password")
+        phone_number = request.data.get("phone_number")
+        region = request.data.get("region")  # optional, currently stored nowhere explicit
+        if not raw_username or not password or not full_name:
+            return Response({"detail": "full_name, username, password are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalize username (strip any domain) and set corporate email
+        try:
+            base_username = str(raw_username).strip()
+            if "@" in base_username:
+                base_username = base_username.split("@", 1)[0]
+            # remove spaces and illegal chars
+            import re
+            base_username = re.sub(r"[^a-zA-Z0-9._-]", "", base_username)
+        except Exception:
+            base_username = raw_username
+        email = f"{base_username}@agriplatform.com"
+
+        # Create user with normalized username/email and optional phone
+        user = CustomUser.objects.create_user(
+            username=base_username,
+            password=password,
+            full_name=full_name,
+            email=email,
+        )
+        if phone_number:
+            try:
+                user.phone_number = phone_number
+                user.save(update_fields=["phone_number"])
+            except Exception:
+                pass
+        # Assign ONLY Admin role
+        admin_role, _ = Role.objects.get_or_create(name="Admin")
+        UserRole.objects.get_or_create(user=user, role=admin_role, defaults={"userrole_id": user.email or user.username})
+        # Ensure End-App-User role is NOT attached
+        try:
+            end_role = Role.objects.get(name="End-App-User")
+            UserRole.objects.filter(user=user, role=end_role).delete()
+        except Role.DoesNotExist:
+            pass
+        # Record activity for creator (SuperAdmin)
+        try:
+            ct = ContentType.objects.get_for_model(user.__class__)
+            UserActivity.objects.create(
+                user=request.user,
+                action="create",
+                content_type=ct,
+                object_id=user.pk,
+                description=f"Created admin: {user.full_name or user.username}",
+            )
+        except Exception:
+            pass
+        return Response({"user": UserSerializer(user).data}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="dedupe-roles")
+    def dedupe_roles(self, request, pk=None):
+        # Remove any duplicate End-App-User role for Admin users
+        user = self.get_object()
+        roles = set(user.user_roles.select_related("role").values_list("role__name", flat=True))
+        if "Admin" in roles:
+            try:
+                end_role = Role.objects.get(name="End-App-User")
+                UserRole.objects.filter(user=user, role=end_role).delete()
+            except Role.DoesNotExist:
+                pass
+        return Response({"roles": list(user.user_roles.select_related("role").values_list("role__name", flat=True))})
+
+    @action(detail=False, methods=["post"], url_path="dedupe-roles-bulk")
+    def dedupe_roles_bulk(self, request):
+        """Remove End-App-User role from users who also have other roles. SuperAdmin only."""
+        roles = set(request.user.user_roles.select_related("role").values_list("role__name", flat=True))
+        if not (request.user.is_superuser or ("SuperAdmin" in roles)):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            end_role = Role.objects.get(name="End-App-User")
+        except Role.DoesNotExist:
+            return Response({"removed": 0, "detail": "End-App-User role not found"})
+
+        # Users who have End-App-User and at least one other role
+        from django.db.models import Count
+        candidate_user_ids = (
+            UserRole.objects
+            .values("user_id")
+            .annotate(rc=Count("role_id"))
+            .filter(rc__gt=1)
+            .values_list("user_id", flat=True)
+        )
+        qs = UserRole.objects.filter(user_id__in=candidate_user_ids, role=end_role)
+        removed = qs.count()
+        qs.delete()
+        return Response({"removed": removed})
+
 
 class AdminRolesViewSet(viewsets.ReadOnlyModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Business", "Development"]
+    required_roles = ["SuperAdmin", "Admin", "Business", "Developer"]
     queryset = Role.objects.all().order_by("name")
     serializer_class = RoleSerializer
 
@@ -348,7 +481,7 @@ class AdminRolesViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminNotificationsViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Support", "Business", "Development"]
+    required_roles = ["SuperAdmin", "Admin", "Support", "Business", "Developer"]
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
@@ -396,14 +529,33 @@ class AdminNotificationsViewSet(viewsets.ModelViewSet):
             message=message,
         )
         serializer = self.get_serializer(obj)
+        # Record activity for sender
+        try:
+            ct = ContentType.objects.get_for_model(obj.__class__)
+            UserActivity.objects.create(
+                user=request.user,
+                action="create",
+                content_type=ct,
+                object_id=obj.pk,
+                description=f"Sent notification to {(receiver.full_name if receiver else request.user.full_name) or (receiver.username if receiver else request.user.username)}",
+            )
+        except Exception:
+            pass
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        obj = self.get_object()
+        obj.is_read = True
+        obj.save(update_fields=["is_read"])
+        return Response({"status": "ok"})
 
 
 class AdminFieldViewSet(viewsets.ReadOnlyModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Analyst", "Agronomist", "Business", "Development"]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Agronomist", "Business", "Developer"]
     queryset = Field.objects.select_related("user", "farm", "crop", "crop_variety", "soil_type")
     serializer_class = FieldSerializer
 
@@ -411,19 +563,70 @@ class AdminFieldViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminAnalyticsView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Development"]
+    required_roles = ["SuperAdmin", "Admin", "Analyst", "Business", "Developer"]
 
     def get(self, request):
-        total_users = CustomUser.objects.count()
+        # Role of requester for UI
+        role_names = list(request.user.user_roles.select_related("role").values_list("role__name", flat=True))
+        # Stats per requirements
+        # Total revenue from transactions
+        try:
+            total_revenue = (
+                Transaction.objects.all().aggregate(total=Count("id"))  # fallback count if no sum
+            )
+        except Exception:
+            total_revenue = {"total": 0}
+        try:
+            from django.db.models import Sum
+
+            revenue_amount = (
+                Transaction.objects.filter(status__in=["success", "paid", "completed"]).aggregate(sum_amt=Sum("amount"))
+            )["sum_amt"] or 0
+        except Exception:
+            revenue_amount = 0
+
+        # Active end-users: users who have ONLY the End-App-User role (no other roles)
+        try:
+            from django.db.models import Q
+            end_user_ids = (
+                CustomUser.objects
+                .filter(is_active=True, user_roles__role__name="End-App-User")
+                .values_list("id", flat=True)
+            )
+            # Exclude anyone who also has any non end-user role
+            privileged_roles = [
+                "SuperAdmin", "Admin", "Analyst", "Business", "Developer", "Support", "Agronomist", "Manager",
+            ]
+            mixed_ids = (
+                CustomUser.objects
+                .filter(id__in=end_user_ids, user_roles__role__name__in=privileged_roles)
+                .values_list("id", flat=True)
+            )
+            active_end_users = (
+                CustomUser.objects.filter(id__in=end_user_ids).exclude(id__in=mixed_ids).distinct().count()
+            )
+        except Exception:
+            active_end_users = 0
+        # Total fields
         total_fields = Field.objects.count()
-        total_plans = Plan.objects.count()
-        active_subscriptions = UserPlan.objects.filter(is_active=True).count()
+        # Active admins (exclude SuperAdmin)
+        active_admins = (
+            CustomUser.objects.filter(is_active=True, user_roles__role__name="Admin").distinct().count()
+        )
+
+        # Recent activity for this user
+        recent_activity = UserActivity.objects.filter(user=request.user).order_by("-created_at")[:6]
+
         return Response(
             {
-                "total_users": total_users,
-                "total_fields": total_fields,
-                "total_plans": total_plans,
-                "active_subscriptions": active_subscriptions,
+                "role_names": role_names,
+                "stats": {
+                    "total_revenue": float(revenue_amount) if revenue_amount is not None else 0,
+                    "active_end_users": active_end_users,
+                    "total_fields": total_fields,
+                    "active_admins": active_admins,
+                },
+                "recent_activity": ActivitySerializer(recent_activity, many=True).data,
             }
         )
 
@@ -500,7 +703,29 @@ class FieldViewSet(viewsets.ModelViewSet):
         return Field.objects.filter(user=self.request.user).select_related("farm", "crop", "crop_variety")
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # Map size_acres to area.hectares if provided on create
+        size_acres = None
+        try:
+            raw = self.request.data.get("size_acres")
+            if raw is not None and raw != "":
+                size_acres = float(raw)
+        except Exception:
+            size_acres = None
+        area = None
+        if size_acres is not None:
+            try:
+                area = {"hectares": round(size_acres / 2.47105, 6)}
+            except Exception:
+                area = None
+        field = serializer.save(user=self.request.user, area=area if area else None)
+        # Persist irrigation method relation when passed during create
+        try:
+            method_id = self.request.data.get("irrigation_method")
+            if method_id:
+                method = IrrigationMethods.objects.get(pk=method_id)
+                FieldIrrigationMethod.objects.update_or_create(field=field, defaults={"irrigation_method": method})
+        except Exception:
+            pass
 
     @action(detail=True, methods=["get"])
     def lifecycle(self, request, pk=None):
@@ -530,6 +755,16 @@ class FieldViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         # Allow updating Field normally, and handle irrigation_method specially
         response = None
+        # Map size_acres to area.hectares when present (update instance directly to avoid mutable issues)
+        try:
+            raw = request.data.get("size_acres")
+            if raw is not None and raw != "":
+                acres = float(raw)
+                fld = self.get_object()
+                fld.area = {"hectares": round(acres / 2.47105, 6)}
+                fld.save(update_fields=["area"])
+        except Exception:
+            pass
         method_id = request.data.get("irrigation_method")
         if method_id:
             try:
@@ -543,6 +778,31 @@ class FieldViewSet(viewsets.ModelViewSet):
         # Return fresh serialized field with derived attributes
         field = self.get_object()
         return Response(FieldSerializer(field).data)
+
+    def update(self, request, *args, **kwargs):
+        # Support PUT updates, including irrigation method mapping and size conversion
+        try:
+            raw = request.data.get("size_acres")
+            if raw is not None and raw != "":
+                acres = float(raw)
+                fld = self.get_object()
+                fld.area = {"hectares": round(acres / 2.47105, 6)}
+                fld.save(update_fields=["area"])
+        except Exception:
+            pass
+        response = super().update(request, *args, **kwargs)
+        # After update, persist irrigation method relationship if provided
+        try:
+            method_id = request.data.get("irrigation_method")
+            if method_id:
+                field = self.get_object()
+                method = IrrigationMethods.objects.get(pk=method_id)
+                FieldIrrigationMethod.objects.update_or_create(field=field, defaults={"irrigation_method": method})
+                # return refreshed representation
+                return Response(FieldSerializer(field).data)
+        except Exception:
+            pass
+        return response
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -830,6 +1090,7 @@ class RazorpayWebhookView(APIView):
 class ExportCSVView(APIView):
     # Accept token via header or query param; handle auth manually to support new-tab downloads
     authentication_classes: list = []
+    permission_classes: list = []
 
     def get(self, request):
         # Resolve user from Authorization header (Token ...) or token query param
@@ -884,6 +1145,7 @@ class ExportCSVView(APIView):
 class ExportPDFView(APIView):
     # Accept token via header or query param; handle auth manually to support new-tab downloads
     authentication_classes: list = []
+    permission_classes: list = []
 
     def get(self, request):
         # Resolve user from Authorization header (Token ...) or token query param

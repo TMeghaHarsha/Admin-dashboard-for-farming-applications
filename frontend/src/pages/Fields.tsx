@@ -28,6 +28,8 @@ const Fields = () => {
   const [openSoilReportDialog, setOpenSoilReportDialog] = useState(false);
   const [openSoilAnalysisDialog, setOpenSoilAnalysisDialog] = useState(false);
   const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
+  const [openDetailsDialog, setOpenDetailsDialog] = useState(false);
+  const [detailsField, setDetailsField] = useState<any | null>(null);
   const [scheduleForm, setScheduleForm] = useState({ field: "", time: "", notes: "" });
   const [editingField, setEditingField] = useState<any | null>(null);
   const [formField, setFormField] = useState({
@@ -169,7 +171,7 @@ const Fields = () => {
             </TableHeader>
             <TableBody>
               {filteredFields.map((field) => (
-                <TableRow key={field.id}>
+                <TableRow key={field.id} className="cursor-pointer" onClick={() => { setDetailsField(field); setOpenDetailsDialog(true); }}>
                   <TableCell className="font-medium">{field.name}</TableCell>
                   <TableCell>{field.size_acres ? `${field.size_acres} acres` : (field.area?.hectares ? `${field.area.hectares} ha` : "-")}</TableCell>
                   <TableCell>{field.soil_type_name || "-"}</TableCell>
@@ -348,6 +350,29 @@ const Fields = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Field Details Dialog */}
+      <Dialog open={openDetailsDialog} onOpenChange={setOpenDetailsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Field Details</DialogTitle>
+          </DialogHeader>
+          {detailsField && (
+            <div className="space-y-2 text-sm">
+              <div><strong>Name:</strong> {detailsField.name}</div>
+              <div><strong>Size:</strong> {detailsField.size_acres ? `${detailsField.size_acres} acres` : (detailsField.area?.hectares ? `${detailsField.area.hectares} ha` : "-")}</div>
+              <div><strong>Farm:</strong> {detailsField.farm_name || "-"}</div>
+              <div><strong>Soil Type:</strong> {detailsField.soil_type_name || "-"}</div>
+              <div><strong>Irrigation:</strong> {detailsField.irrigation_method_name || "-"}</div>
+              <div><strong>Crop:</strong> {detailsField.crop_name || "-"} {detailsField.crop_variety_name ? `(${detailsField.crop_variety_name})` : ""}</div>
+              <div><strong>Sowing Date:</strong> {detailsField.current_sowing_date || "-"}</div>
+              <div><strong>Harvesting Date:</strong> {detailsField.current_harvesting_date || "-"}</div>
+              <div><strong>Created:</strong> {detailsField.created_at ? new Date(detailsField.created_at).toLocaleString() : "-"}</div>
+              <div><strong>Updated:</strong> {detailsField.updated_at ? new Date(detailsField.updated_at).toLocaleString() : "-"}</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Irrigation Practice Dialog */}
       <Dialog open={openIrrigationDialog} onOpenChange={setOpenIrrigationDialog}>
         <DialogContent>
@@ -509,7 +534,7 @@ const Fields = () => {
                   headers: { "Content-Type": "application/json", ...authHeaders() },
                   body: JSON.stringify({ 
                     field: Number(scheduleForm.field), 
-                    irrigation_method: fields.find(f => f.id == scheduleForm.field)?.irrigation_method || irrigationMethods[0]?.id || 1, 
+                    // omit irrigation_method to default from field
                     notes: scheduleForm.notes || `Scheduled for ${new Date(scheduleForm.time).toLocaleString()}`,
                     scheduled_time: scheduleForm.time
                   }),

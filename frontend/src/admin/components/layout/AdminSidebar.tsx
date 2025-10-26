@@ -9,6 +9,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -35,6 +36,20 @@ const navItems = [
 export function AdminSidebar() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const [roleTitle, setRoleTitle] = useState<string>("");
+
+  useEffect(() => {
+    const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    fetch(`${API_URL}/auth/me/`, { headers: { Authorization: `Token ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => {
+        const first = Array.isArray(me?.roles) ? me.roles[0] : "";
+        setRoleTitle(first || "");
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -45,8 +60,10 @@ export function AdminSidebar() {
           </div>
           {!isCollapsed && (
             <div>
-              <h2 className="text-sm font-semibold text-sidebar-foreground">AgroManager</h2>
-              <p className="text-xs text-muted-foreground">Admin</p>
+              <h2 className="text-sm font-semibold text-sidebar-foreground">Agricultural Management</h2>
+              {roleTitle && (
+                <p className="text-xs text-muted-foreground">{roleTitle}</p>
+              )}
             </div>
           )}
         </div>

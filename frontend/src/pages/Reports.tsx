@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Download, FileDown, TrendingUp } from "lucide-react";
 import {
   Table,
@@ -19,6 +21,10 @@ const Reports = () => {
   const authHeaders = token ? { Authorization: `Token ${token}` } : {};
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [analytics, setAnalytics] = useState<any | null>(null);
+  const [fieldsData, setFieldsData] = useState<any[]>([]);
+  const [openExport, setOpenExport] = useState(false);
+  const [exportType, setExportType] = useState<"csv" | "pdf">("csv");
+  const [selectedAnalytics, setSelectedAnalytics] = useState<Record<string, boolean>>({ crop_distribution: true, irrigation_distribution: true, fields_over_time: true, plan_mix: true });
   const stats = [
     { title: "Lifecycle Completion", value: analytics ? `${analytics.lifecycle_completion}%` : "0%", change: "" },
     { title: "Active Reports", value: analytics && analytics.has_data ? String((analytics.crop_distribution || []).reduce((a:number,b:any)=>a+b.value,0)) : "0", subtitle: "" },
@@ -59,6 +65,14 @@ const Reports = () => {
           }
         });
         const cropDistData = Object.keys(cropDistribution).map(name => ({ name, value: cropDistribution[name] }));
+
+        // Build irrigation distribution from field irrigation methods
+        const irrDistribution: Record<string, number> = {};
+        fields.forEach((f: any) => {
+          const key = f.irrigation_method_name || "Unknown";
+          irrDistribution[key] = (irrDistribution[key] || 0) + 1;
+        });
+        const irrDistData = Object.keys(irrDistribution).map(name => ({ name, value: irrDistribution[name] }));
         
         // Build fields over time
         const byMonth: Record<string, number> = {};
@@ -79,8 +93,9 @@ const Reports = () => {
         // Update analytics with correct crop distribution
         if (analyticsData) {
           analyticsData.crop_distribution = cropDistData;
+          (analyticsData as any).irrigation_distribution = irrDistData;
         }
-        
+        setFieldsData(fields);
         setExtra({ planMix, fieldsOverTime });
       } catch (error) {
         console.error('Error fetching analytics:', error);
@@ -108,41 +123,13 @@ const Reports = () => {
         <div className="flex gap-2 items-center">
           <Button
             variant="outline"
-            onClick={() => {
-              const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
-              const selected = prompt(`Select analytics to download CSV for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
-              if (!selected) return;
-              const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
-              const selectedAnalytics = indices.map(i => analytics[i]);
-              const start = prompt('Start date (YYYY-MM-DD) - optional');
-              const end = prompt('End date (YYYY-MM-DD) - optional');
-              const qs = new URLSearchParams();
-              selectedAnalytics.forEach(a => qs.append('analytics', a));
-              if (start) qs.set('start_date', start);
-              if (end) qs.set('end_date', end);
-              if (token) qs.set('token', token);
-              window.open(`${API_URL}/reports/export/csv/?${qs.toString()}`, '_blank');
-            }}
+            onClick={() => { setExportType('csv'); setOpenExport(true); }}
           >
             <Download className="mr-2 h-4 w-4" />
             Download CSV
           </Button>
           <Button
-            onClick={() => {
-              const analytics = ['crop_distribution', 'irrigation_distribution', 'fields_over_time', 'plan_mix'];
-              const selected = prompt(`Select analytics to export PDF for:\n${analytics.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n\nEnter numbers separated by commas (e.g., 1,2,3):`);
-              if (!selected) return;
-              const indices = selected.split(',').map(i => parseInt(i.trim()) - 1).filter(i => i >= 0 && i < analytics.length);
-              const selectedAnalytics = indices.map(i => analytics[i]);
-              const start = prompt('Start date (YYYY-MM-DD) - optional');
-              const end = prompt('End date (YYYY-MM-DD) - optional');
-              const qs = new URLSearchParams();
-              selectedAnalytics.forEach(a => qs.append('analytics', a));
-              if (start) qs.set('start_date', start);
-              if (end) qs.set('end_date', end);
-              if (token) qs.set('token', token);
-              window.open(`${API_URL}/reports/export/pdf/?${qs.toString()}`, '_blank');
-            }}
+            onClick={() => { setExportType('pdf'); setOpenExport(true); }}
           >
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
@@ -172,7 +159,7 @@ const Reports = () => {
           </CardHeader>
         </Card>
       )}
-      {(analytics?.crop_distribution?.length > 0 || extra?.planMix?.length > 0) && (
+      {(analytics?.crop_distribution?.length > 0 || (analytics as any)?.irrigation_distribution?.length > 0 || extra?.planMix?.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader><CardTitle>Crop Distribution</CardTitle></CardHeader>
@@ -181,6 +168,21 @@ const Reports = () => {
                 <PieChart>
                   <Pie data={analytics?.crop_distribution || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
                     {(analytics?.crop_distribution || []).map((_: any, idx: number) => (
+                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Irrigation Distribution</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={(analytics as any)?.irrigation_distribution || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                    {(((analytics as any)?.irrigation_distribution) || []).map((_: any, idx: number) => (
                       <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                     ))}
                   </Pie>
@@ -225,6 +227,51 @@ const Reports = () => {
           </Card>
         </div>
       )}
+
+      {/* Export Dialog */}
+      <Dialog open={openExport} onOpenChange={setOpenExport}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{exportType === 'csv' ? 'Download CSV' : 'Export PDF'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Select Analytics</Label>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {['crop_distribution','irrigation_distribution','fields_over_time','plan_mix'].map(key => (
+                  <label key={key} className="flex items-center gap-2">
+                    <input type="checkbox" checked={!!selectedAnalytics[key]} onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, [key]: e.target.checked })} />
+                    {key.replace(/_/g,' ')}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start date</Label>
+                <input type="date" className="border rounded h-9 px-2 w-full" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>End date</Label>
+                <input type="date" className="border rounded h-9 px-2 w-full" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOpenExport(false)}>Cancel</Button>
+              <Button onClick={() => {
+                const qs = new URLSearchParams();
+                Object.keys(selectedAnalytics).filter(k => selectedAnalytics[k]).forEach(k => qs.append('analytics', k));
+                if (dateRange.start) qs.set('start_date', dateRange.start);
+                if (dateRange.end) qs.set('end_date', dateRange.end);
+                if (token) qs.set('token', token);
+                const url = `${API_URL}/reports/export/${exportType}/?${qs.toString()}`;
+                window.open(url, '_blank');
+                setOpenExport(false);
+              }}>{exportType === 'csv' ? 'Download' : 'Export'}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Health and productivity sections removed per requirements */}
     </div>

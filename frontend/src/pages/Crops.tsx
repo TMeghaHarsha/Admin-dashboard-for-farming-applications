@@ -29,6 +29,8 @@ const Crops = () => {
   const [openCropDialog, setOpenCropDialog] = useState(false);
   const [editingField, setEditingField] = useState<any | null>(null);
   const [form, setForm] = useState({ field: "", crop: "", crop_variety: "", sowing_date: "", harvesting_date: "" });
+  const [openDetails, setOpenDetails] = useState(false);
+  const [detailsField, setDetailsField] = useState<any | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState({ crop_id: "" });
 
@@ -244,7 +246,7 @@ const Crops = () => {
                 const status = computeStatus(f);
                 const season = f.current_sowing_date ? new Date(f.current_sowing_date).toLocaleString(undefined, { month: 'long' }) : "—";
                 return (
-                  <TableRow key={f.id}>
+                  <TableRow key={f.id} className="cursor-pointer" onClick={() => { setDetailsField(f); setOpenDetails(true); }}>
                     <TableCell className="font-medium">{f.name}</TableCell>
                     <TableCell className="font-medium">{f.crop_name || "-"}</TableCell>
                     <TableCell>{f.crop_variety_name || varieties.find((v) => String(v.id) === String(f.crop_variety))?.name || "-"}</TableCell>
@@ -341,6 +343,29 @@ const Crops = () => {
               <Button onClick={submitCrop}>{editingField ? "Update" : "Assign"}</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Crop/Field Assignment Details */}
+      <Dialog open={openDetails} onOpenChange={setOpenDetails}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Crop Details</DialogTitle>
+          </DialogHeader>
+          {detailsField && (
+            <div className="space-y-2 text-sm">
+              <div><strong>Field:</strong> {detailsField.name}</div>
+              <div><strong>Crop:</strong> {detailsField.crop_name || "-"}</div>
+              <div><strong>Variety:</strong> {detailsField.crop_variety_name || "-"}</div>
+              <div><strong>Season:</strong> {detailsField.current_sowing_date ? new Date(detailsField.current_sowing_date).toLocaleString(undefined, { month: 'long' }) : "-"}</div>
+              <div><strong>Status:</strong> {computeStatus(detailsField)}</div>
+              <div><strong>Sowing Date:</strong> {detailsField.current_sowing_date || "-"}</div>
+              <div><strong>Harvesting Date:</strong> {detailsField.current_harvesting_date || "-"}</div>
+              <div><strong>Irrigation:</strong> {detailsField.irrigation_method_name || "-"}</div>
+              <div><strong>Created:</strong> {detailsField.created_at ? new Date(detailsField.created_at).toLocaleString() : "-"}</div>
+              <div><strong>Updated:</strong> {detailsField.updated_at ? new Date(detailsField.updated_at).toLocaleString() : "-"}</div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
