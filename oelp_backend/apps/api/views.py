@@ -55,6 +55,7 @@ from apps.models_app.farm import Farm
 from apps.models_app.field import Field, Device, CropLifecycleDates, FieldIrrigationMethod, FieldIrrigationPractice
 from apps.models_app.feature import Feature, FeatureType
 from apps.models_app.plan import Plan
+from apps.models_app.feature_plan import PlanFeature
 from apps.models_app.user_plan import UserPlan, PaymentMethod, Transaction
 from apps.models_app.notifications import Notification, SupportRequest
 from apps.models_app.irrigation import IrrigationMethods
@@ -235,7 +236,14 @@ class DashboardView(APIView):
         from django.utils import timezone
 
         user = request.user
-        user_fields = Field.objects.filter(user=user, is_active=True)
+        try:
+            role_names = set(user.user_roles.select_related("role").values_list("role__name", flat=True))
+        except Exception:
+            role_names = set()
+        privileged = user.is_superuser or bool({"SuperAdmin", "Admin", "Agronomist", "Analyst", "Business", "Developer"} & role_names)
+
+        base_fields = Field.objects.filter(is_active=True)
+        user_fields = base_fields if privileged else base_fields.filter(user=user)
         active_fields = user_fields.count()
 
         # Count fields with a crop assigned (considered active until harvested)
@@ -265,7 +273,7 @@ class DashboardView(APIView):
         notifications_count = Notification.objects.filter(receiver=user, is_read=False).count()
         recent_practices_qs = (
             FieldIrrigationPractice.objects
-            .filter(field__user=user)
+            .filter(field__in=user_fields)
             .select_related("field", "irrigation_method")
             .order_by("-performed_at")[:3]
         )
@@ -364,6 +372,21 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         UserRole.objects.get_or_create(
             user=user, role=role, defaults={"userrole_id": user.email or user.username}
         )
+        # Ensure a 'create' activity exists for this user with the acting admin as creator
+        try:
+            from django.contrib.contenttypes.models import ContentType
+            ct = ContentType.objects.get_for_model(user.__class__)
+            has_create = UserActivity.objects.filter(content_type=ct, object_id=user.pk, action="create").exists()
+            if not has_create:
+                UserActivity.objects.create(
+                    user=request.user,
+                    action="create",
+                    content_type=ct,
+                    object_id=user.pk,
+                    description=f"Created employee: {user.full_name or user.username}",
+                )
+        except Exception:
+            pass
         serializer = self.get_serializer(user)
         return Response(serializer.data)
 
@@ -470,6 +493,28 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         return Response({"removed": removed})
 
 
+class UsersReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Agronomist", "Analyst", "Business", "Developer", "Support"]
+
+    def get_queryset(self):
+        # Only return pure End-App-Users (exclude users who also have privileged roles)
+        end_user_qs = CustomUser.objects.filter(is_active=True, user_roles__role__name="End-App-User").distinct()
+        privileged_roles = [
+            "SuperAdmin", "Admin", "Analyst", "Business", "Developer", "Support", "Agronomist", "Manager",
+        ]
+        mixed_ids = (
+            CustomUser.objects
+            .filter(id__in=end_user_qs.values_list("id", flat=True), user_roles__role__name__in=privileged_roles)
+            .values_list("id", flat=True)
+        )
+        return end_user_qs.exclude(id__in=mixed_ids).order_by("-date_joined")
+
+    def get_serializer_class(self):
+        from .serializers import UserSerializer as _UserSerializer
+        return _UserSerializer
+
 class AdminRolesViewSet(viewsets.ReadOnlyModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
@@ -481,7 +526,7 @@ class AdminRolesViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminNotificationsViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [HasRole]
-    required_roles = ["SuperAdmin", "Admin", "Support", "Business", "Developer"]
+    required_roles = ["SuperAdmin", "Admin", "Support", "Business", "Developer", "Analyst"]
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
@@ -614,6 +659,36 @@ class AdminAnalyticsView(APIView):
             CustomUser.objects.filter(is_active=True, user_roles__role__name="Admin").distinct().count()
         )
 
+        # Business-centric analytics
+        from django.db.models.functions import TruncDate
+        from django.db.models import Sum
+        last_7_days = datetime.now().date() - timedelta(days=6)
+        revenue_daily_qs = (
+            Transaction.objects.filter(created_at__date__gte=last_7_days, status__in=["success", "paid", "completed"])
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(amount=Sum("amount"))
+            .order_by("day")
+        )
+        revenue_by_day = [
+            {"name": row["day"].isoformat() if getattr(row.get("day"), "isoformat", None) else str(row.get("day")), "value": float(row["amount"] or 0)}
+            for row in revenue_daily_qs
+        ]
+        # Transactions by status
+        txn_status_counts = (
+            Transaction.objects.values("status").annotate(cnt=Count("id")).order_by("-cnt")
+        )
+        transactions_by_status = [
+            {"name": (row["status"] or "unknown"), "value": row["cnt"]} for row in txn_status_counts
+        ]
+        # Plan distribution (active user plans by plan)
+        plan_counts = (
+            UserPlan.objects.filter(is_active=True).values("plan__name").annotate(cnt=Count("id")).order_by("-cnt")
+        )
+        plan_distribution = [
+            {"name": (row["plan__name"] or "Unknown"), "value": row["cnt"]} for row in plan_counts
+        ]
+
         # Recent activity for this user
         recent_activity = UserActivity.objects.filter(user=request.user).order_by("-created_at")[:6]
 
@@ -625,10 +700,37 @@ class AdminAnalyticsView(APIView):
                     "active_end_users": active_end_users,
                     "total_fields": total_fields,
                     "active_admins": active_admins,
+                    "active_employees": CustomUser.objects.filter(
+                        is_active=True,
+                        user_roles__role__name__in=["Analyst","Agronomist","Support","Business","Developer"],
+                    ).distinct().count(),
                 },
+                "revenue_by_day": revenue_by_day,
+                "transactions_by_status": transactions_by_status,
+                "plan_distribution": plan_distribution,
                 "recent_activity": ActivitySerializer(recent_activity, many=True).data,
             }
         )
+
+
+class PlanFeatureViewSet(viewsets.ModelViewSet):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [HasRole]
+    required_roles = ["SuperAdmin", "Admin", "Business", "Developer"]
+
+    def get_queryset(self):
+        qs = PlanFeature.objects.select_related("plan", "feature").all()
+        plan_id = self.request.query_params.get("plan") or self.request.query_params.get("plan_id")
+        if plan_id:
+            try:
+                qs = qs.filter(plan_id=plan_id)
+            except Exception:
+                pass
+        return qs
+
+    def get_serializer_class(self):
+        from .serializers import PlanFeatureSerializer as _PlanFeatureSerializer
+        return _PlanFeatureSerializer
 
 
 class EnsureRoleView(APIView):
@@ -1205,10 +1307,15 @@ class AnalyticsSummaryView(APIView):
 
     def get(self, request):
         user = request.user
+        try:
+            role_names = set(user.user_roles.select_related("role").values_list("role__name", flat=True))
+        except Exception:
+            role_names = set()
+        privileged = user.is_superuser or bool({"SuperAdmin", "Admin", "Agronomist", "Analyst", "Business", "Developer"} & role_names)
 
         # Crop distribution by assigned crop on fields
         crop_counts = (
-            Field.objects.filter(user=user)
+            (Field.objects.all() if privileged else Field.objects.filter(user=user))
             .values("crop__name")
             .annotate(cnt=Count("id"))
             .order_by("-cnt")
@@ -1220,7 +1327,7 @@ class AnalyticsSummaryView(APIView):
 
         # Irrigation distribution: prefer explicit method mapping; fallback to practices
         irrigation_counts = (
-            FieldIrrigationMethod.objects.filter(field__user=user)
+            FieldIrrigationMethod.objects.filter(field__in=(Field.objects.all() if privileged else Field.objects.filter(user=user)))
             .values("irrigation_method__name")
             .annotate(cnt=Count("id"))
             .order_by("-cnt")
@@ -1231,7 +1338,7 @@ class AnalyticsSummaryView(APIView):
         ]
         if not irrigation_distribution:
             practice_counts = (
-                FieldIrrigationPractice.objects.filter(field__user=user)
+                FieldIrrigationPractice.objects.filter(field__in=(Field.objects.all() if privileged else Field.objects.filter(user=user)))
                 .values("irrigation_method__name")
                 .annotate(cnt=Count("id"))
                 .order_by("-cnt")
@@ -1241,21 +1348,39 @@ class AnalyticsSummaryView(APIView):
                 for row in practice_counts
             ]
 
-        # Lifecycle completion percentage
-        total_lifecycle = CropLifecycleDates.objects.filter(field__user=user).count()
-        completed_lifecycle = (
-            CropLifecycleDates.objects.filter(field__user=user, harvesting_date__isnull=False).count()
-        )
-        lifecycle_completion = int(round((completed_lifecycle / total_lifecycle) * 100)) if total_lifecycle else 0
+        # Lifecycle completion breakdown and percent
+        lifecycle_base = CropLifecycleDates.objects.filter(field__in=(Field.objects.all() if privileged else Field.objects.filter(user=user)))
+        total_lifecycle = lifecycle_base.count()
+        completed_lifecycle = lifecycle_base.filter(harvesting_date__isnull=False).count()
+        remaining_lifecycle = max(total_lifecycle - completed_lifecycle, 0)
+        lifecycle_completion_percent = int(round((completed_lifecycle / total_lifecycle) * 100)) if total_lifecycle else 0
+        lifecycle_completion = [
+            {"name": "Completed", "value": completed_lifecycle},
+            {"name": "Remaining", "value": remaining_lifecycle},
+        ]
 
-        has_data = bool(crop_distribution or irrigation_distribution or total_lifecycle)
+        # Region distribution based on Field.location_name (fallback to Unknown)
+        region_counts = (
+            (Field.objects.all() if privileged else Field.objects.filter(user=user))
+            .values("location_name")
+            .annotate(cnt=Count("id"))
+            .order_by("-cnt")
+        )
+        region_distribution = [
+            {"name": (row["location_name"] or "Unknown"), "value": row["cnt"]}
+            for row in region_counts
+        ]
+
+        has_data = bool(crop_distribution or irrigation_distribution or region_distribution or total_lifecycle)
 
         return Response(
             {
                 "has_data": has_data,
                 "lifecycle_completion": lifecycle_completion,
+                "lifecycle_completion_percent": lifecycle_completion_percent,
                 "crop_distribution": crop_distribution,
                 "irrigation_distribution": irrigation_distribution,
+                "region_distribution": region_distribution,
             }
         )
 

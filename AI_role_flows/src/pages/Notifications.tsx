@@ -85,20 +85,40 @@ export default function Notifications() {
                 <DialogHeader>
                   <DialogTitle>Create New Notification</DialogTitle>
                   <DialogDescription>
-                    Send a notification to admins or users in specific regions
+                    Support alerts and announcements. Choose a template and target a role segment (excluding SuperAdmin).
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="recipient">Recipient</Label>
+                    <Label htmlFor="segment">Segment by Role</Label>
                     <Select>
-                      <SelectTrigger id="recipient">
-                        <SelectValue placeholder="Select recipient" />
+                      <SelectTrigger id="segment">
+                        <SelectValue placeholder="Choose target role" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all-admins">All Admins</SelectItem>
-                        <SelectItem value="region-1">Region 1 Admins</SelectItem>
-                        <SelectItem value="region-2">Region 2 Admins</SelectItem>
+                        <SelectItem value="End-App-User">End Users</SelectItem>
+                        <SelectItem value="Admin">Admins</SelectItem>
+                        <SelectItem value="Agronomist">Agronomists</SelectItem>
+                        <SelectItem value="Support">Support</SelectItem>
+                        <SelectItem value="Analyst">Analysts</SelectItem>
+                        <SelectItem value="Business">Business</SelectItem>
+                        <SelectItem value="Developer">Developers</SelectItem>
+                        {/* SuperAdmin intentionally omitted */}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="template">Template</Label>
+                    <Select>
+                      <SelectTrigger id="template">
+                        <SelectValue placeholder="Choose a template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sla_breach">SLA Breach Notice</SelectItem>
+                        <SelectItem value="maintenance_window">Planned Maintenance Window</SelectItem>
+                        <SelectItem value="incident_update">Incident Update</SelectItem>
+                        <SelectItem value="resolution_summary">Ticket Resolution Summary</SelectItem>
+                        <SelectItem value="account_assistance">Account Assistance Required</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

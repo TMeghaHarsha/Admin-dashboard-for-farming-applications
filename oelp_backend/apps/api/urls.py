@@ -22,12 +22,14 @@ router.register(r"subscriptions/user", views.UserPlanViewSet, basename="user-pla
 router.register(r"features", views.FeatureViewSet, basename="feature")
 router.register(r"feature-types", views.FeatureTypeViewSet, basename="feature-type")
 router.register(r"plans", views.PlanViewSet, basename="plan")
+router.register(r"plan-features", views.PlanFeatureViewSet, basename="plan-feature")
 router.register(r"payment-methods", views.PaymentMethodViewSet, basename="payment-method")
 router.register(r"transactions", views.TransactionViewSet, basename="transaction")
 router.register(r"admin/users", views.AdminUsersViewSet, basename="admin-users")
 router.register(r"admin/roles", views.AdminRolesViewSet, basename="admin-roles")
 router.register(r"admin/notifications", views.AdminNotificationsViewSet, basename="admin-notifications")
 router.register(r"admin/fields", views.AdminFieldViewSet, basename="admin-fields")
+router.register(r"users", views.UsersReadOnlyViewSet, basename="users-readonly")
 
 urlpatterns = [
     path("", lambda r: JsonResponse({"status": "ok"})),

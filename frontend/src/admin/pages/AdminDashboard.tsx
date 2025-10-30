@@ -10,7 +10,8 @@ export default function AdminDashboard() {
     total_revenue: 0, 
     active_end_users: 0, 
     total_fields: 0, 
-    active_admins: 0 
+    active_admins: 0,
+    active_employees: 0,
   });
   const [roleTitle, setRoleTitle] = useState<string>("Admin");
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -44,6 +45,7 @@ export default function AdminDashboard() {
             active_end_users: Number(s.active_end_users) || 0,
             total_fields: Number(s.total_fields) || 0,
             active_admins: Number(s.active_admins) || 0,
+            active_employees: Number(s.active_employees) || 0,
           } as any);
           setRecentActivity(Array.isArray(data.recent_activity) ? data.recent_activity : []);
         }
@@ -139,12 +141,12 @@ export default function AdminDashboard() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Managers</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{metrics.active_admins}</div>
-            <p className="text-xs text-muted-foreground">Admins & Managers</p>
+            <div className="text-2xl font-bold text-primary">{metrics.active_employees}</div>
+            <p className="text-xs text-muted-foreground">Analyst, Agronomist, Support, Business, Developer</p>
           </CardContent>
         </Card>
       </div>

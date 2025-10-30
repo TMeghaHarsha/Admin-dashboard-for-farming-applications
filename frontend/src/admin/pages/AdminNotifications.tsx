@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Check, Plus } from "lucide-react";
 
@@ -18,9 +18,9 @@ export default function AdminNotifications() {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState({ receiver: "__REQUIRED__", message: "" });
   const [cause, setCause] = useState<string>("");
-  const [targetRoles, setTargetRoles] = useState<string[]>([]);
-  const [me, setMe] = useState<{ roles?: string[] } | null>(null);
-  const [admins, setAdmins] = useState<any[]>([]);
+  const [targetRole, setTargetRole] = useState<string>("");
+  const [me, setMe] = useState<{ id?: number; roles?: string[]; created_by_id?: number } | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
   const [scheduleType, setScheduleType] = useState<"immediate" | "recurring" | "windowed">("immediate");
   const [recurrence, setRecurrence] = useState<"daily" | "weekly" | "monthly">("daily");
   const [windowStart, setWindowStart] = useState<string>("");
@@ -41,25 +41,40 @@ export default function AdminNotifications() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setMe(d))
       .catch(() => {});
-    // Load admins for SuperAdmin to target specific admin
+    // Load all users; we'll filter recipients by selected role and creator constraints
     fetch(`${API_URL}/admin/users/`, { headers: { Authorization: `Token ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const arr = Array.isArray(d?.results) ? d.results : d || [];
-        setAdmins(arr.filter((u:any) => (u.roles||[]).includes('Admin')));
-      })
+      .then((d) => setUsers(Array.isArray(d?.results) ? d.results : d || []))
       .catch(() => {});
   }, []);
 
+  const recipients = useMemo(() => {
+    if (!targetRole) return [] as any[];
+    const isSuper = (me?.roles || []).includes('SuperAdmin');
+    const isAdmin = (me?.roles || []).includes('Admin') && !isSuper;
+    let pool = users as any[];
+    if (targetRole === 'End-App-User') {
+      pool = pool.filter(u => (u.roles || []).length === 0 || (u.roles || []).every((r:string) => r === 'End-App-User'));
+    } else {
+      pool = pool.filter(u => (u.roles || []).includes(targetRole));
+    }
+    if (isAdmin) {
+      if (targetRole === 'SuperAdmin') {
+        pool = pool.filter(u => me?.created_by_id && Number(u.id) === Number(me.created_by_id));
+      } else {
+        pool = pool.filter(u => u.created_by_id && me?.id && Number(u.created_by_id) === Number(me.id));
+        pool = pool.filter(u => !(u.roles || []).includes('Admin') && !(u.roles || []).includes('SuperAdmin'));
+      }
+    }
+    return pool;
+  }, [users, me, targetRole]);
+
   const create = async () => {
     if (!payload.message) { toast.error("Message required"); return; }
-    if (!admins.some((a:any) => String(a.id) === String(payload.receiver))) {
-      toast.error("Select an Admin recipient");
-      return;
-    }
+    if (!recipients.some((a:any) => String(a.id) === String(payload.receiver))) { toast.error("Select a valid recipient"); return; }
     const body: any = { message: payload.message };
     body.receiver = payload.receiver;
-    if (targetRoles.length) body.target_roles = targetRoles;
+    // no bulk role send; enforce specific recipient selection per requirements
     if (scheduleType === "recurring") body.schedule = { type: scheduleType, recurrence };
     if (scheduleType === "windowed") body.schedule = { type: scheduleType, start: windowStart || undefined, end: windowEnd || undefined };
 
@@ -73,7 +88,7 @@ export default function AdminNotifications() {
       setOpen(false);
       setPayload({ receiver: "__REQUIRED__", message: "" });
       setCause("");
-      setTargetRoles([]);
+      setTargetRole("");
       setScheduleType("immediate");
       setRecurrence("daily");
       setWindowStart("");
@@ -170,18 +185,37 @@ export default function AdminNotifications() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Recipient</Label>
-                <Select value={payload.receiver} onValueChange={(v) => setPayload({ ...payload, receiver: v })}>
+                <Label>Role</Label>
+                <Select value={targetRole} onValueChange={(v)=> { setTargetRole(v); setPayload(p=>({ ...p, receiver: "__REQUIRED__" })); }}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select Admin" />
+                    <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {admins.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>{a.full_name || a.email || a.username}</SelectItem>
-                    ))}
+                    <SelectItem value="End-App-User">End User</SelectItem>
+                    <SelectItem value="Analyst">Analyst</SelectItem>
+                    <SelectItem value="Agronomist">Agronomist</SelectItem>
+                    <SelectItem value="Support">Support</SelectItem>
+                    <SelectItem value="Business">Business</SelectItem>
+                    <SelectItem value="Developer">Developer</SelectItem>
+                    <SelectItem value="SuperAdmin">SuperAdmin</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {targetRole && (
+                <div className="space-y-2">
+                  <Label>Recipient</Label>
+                  <Select value={payload.receiver} onValueChange={(v) => setPayload({ ...payload, receiver: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select recipient" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {recipients.map((u)=> (
+                        <SelectItem key={u.id} value={String(u.id)}>{u.full_name || u.email || u.username}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Scheduling</Label>
                 <Select value={scheduleType} onValueChange={(v:any) => setScheduleType(v)}>

@@ -13,11 +13,11 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis
 
 const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).env.REACT_APP_API_URL || "/api";
 
-interface UserRow { id: number; username: string; email: string; full_name: string; roles?: string[]; date_joined?: string; phone_number?: string; created_by_name?: string }
+interface UserRow { id: number; username: string; email: string; full_name: string; roles?: string[]; date_joined?: string; phone_number?: string; created_by_name?: string; created_by_id?: number }
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [me, setMe] = useState<{ roles?: string[] } | null>(null);
+  const [me, setMe] = useState<{ id?: number; roles?: string[]; created_by_id?: number } | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ username: "", password: "", full_name: "", phone_number: "", region: "" });
   const [role, setRole] = useState<string>("Analyst");
@@ -193,12 +193,12 @@ export default function AdminUsers() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? 'Total Employees' : 'Total Admins'}</CardTitle>
+            <CardTitle className="text-sm font-medium">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? 'New This Week' : 'Total Admins'}</CardTitle>
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? metrics.total_employees : metrics.total_admins}</div>
-            <p className="text-xs text-muted-foreground">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? 'Employees' : 'Admin team'}</p>
+            <div className="text-2xl font-bold text-primary">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? metrics.new_this_week : metrics.total_admins}</div>
+            <p className="text-xs text-muted-foreground">{(me?.roles||[]).includes('Admin') && !(me?.roles||[]).includes('SuperAdmin') ? 'Joined in last 7 days' : 'Admin team'}</p>
           </CardContent>
         </Card>
       </div>
@@ -396,6 +396,7 @@ export default function AdminUsers() {
                 {users.filter(u => {
                   const r = u.roles || [];
                   const isSuper = (me?.roles||[]).includes('SuperAdmin');
+                  const isAdmin = (me?.roles||[]).includes('Admin') && !isSuper;
                   const text = (u.full_name||'') + ' ' + (u.email||'') + ' ' + (u.phone_number||'');
                   if (search && !text.toLowerCase().includes(search.toLowerCase())) return false;
                   if (roleFilter !== 'ALL') {
@@ -409,7 +410,14 @@ export default function AdminUsers() {
                   if (isSuper) {
                     return r.length === 0 || r.some(x => ['Admin','SuperAdmin','End-App-User'].includes(x));
                   }
-                  return r.length === 0 || r.some(x => ['Analyst','Agronomist','Support','Business','Developer','End-App-User','SuperAdmin'].includes(x));
+                  if (isAdmin) {
+                    const createdByMe = u.created_by_id && me?.id && Number(u.created_by_id) === Number(me.id);
+                    const isSUWhoCreatedMe = me?.created_by_id && Number(u.id) === Number(me.created_by_id);
+                    const isEmployee = r.some(x => ['Analyst','Agronomist','Support','Business','Developer'].includes(x));
+                    const isEndUser = r.length === 0 || r.every(x => x === 'End-App-User');
+                    return createdByMe && (isEmployee || isEndUser) || isSUWhoCreatedMe;
+                  }
+                  return true;
                 }).map((u) => (
                   <TableRow key={u.id}>
                     <TableCell className="font-medium">{u.full_name}</TableCell>

@@ -27,6 +27,7 @@ from apps.models_app.user_plan import (
 class UserSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    created_by_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
@@ -40,6 +41,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "roles",
             "created_by_name",
+            "created_by_id",
         )
 
     def get_roles(self, obj):
@@ -61,6 +63,23 @@ class UserSerializer(serializers.ModelSerializer):
             )
             if act and act.user:
                 return act.user.full_name or act.user.username or None
+        except Exception:
+            pass
+        return None
+
+    def get_created_by_id(self, obj):
+        try:
+            from django.contrib.contenttypes.models import ContentType
+            ct = ContentType.objects.get_for_model(obj.__class__)
+            act = (
+                UserActivity.objects
+                .filter(content_type=ct, object_id=obj.pk, action__in=["create"])
+                .order_by("id")
+                .select_related("user")
+                .first()
+            )
+            if act and act.user:
+                return act.user.id
         except Exception:
             pass
         return None
@@ -332,6 +351,23 @@ class PlanSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return items
+
+
+class PlanFeatureSerializer(serializers.ModelSerializer):
+    feature_name = serializers.CharField(source="feature.name", read_only=True)
+
+    class Meta:
+        model = PlanFeature
+        fields = (
+            "id",
+            "plan",
+            "feature",
+            "feature_name",
+            "max_count",
+            "duration_days",
+            "created_at",
+            "updated_at",
+        )
 
 
 class UserPlanSerializer(serializers.ModelSerializer):

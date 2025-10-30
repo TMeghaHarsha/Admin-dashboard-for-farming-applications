@@ -22,6 +22,32 @@ import AdminNotifications from "./admin/pages/AdminNotifications";
 import AdminSettings from "./admin/pages/AdminSettings";
 import { AdminLayout } from "./admin/components/layout/AdminLayout";
 import AdminCrops from "./admin/pages/AdminCrops";
+// Agronomist portal imports
+import { AgronomistLayout } from "./agronomist/components/layout/AgronomistLayout";
+import { SupportLayout } from "./support/components/layout/SupportLayout";
+import SupportDashboard from "./support/pages/SupportDashboard";
+import SupportNotifications from "./support/pages/SupportNotifications";
+import SupportUsers from "./support/pages/SupportUsers";
+// Analyst portal imports
+import { AnalystLayout } from "./analyst/components/layout/AnalystLayout";
+import AnalystDashboard from "./analyst/pages/AnalystDashboard";
+import AnalystReports from "./analyst/pages/AnalystReports";
+import AnalystNotifications from "./analyst/pages/AnalystNotifications";
+import AgronomistDashboard from "./agronomist/pages/AgronomistDashboard";
+import AgronomistCrops from "./agronomist/pages/AgronomistCrops";
+import AgronomistNotifications from "./agronomist/pages/AgronomistNotifications";
+import AgronomistUsers from "./agronomist/pages/AgronomistUsers";
+// Business portal imports
+import { BusinessLayout } from "./business/components/layout/BusinessLayout";
+import BusinessDashboard from "./business/pages/BusinessDashboard";
+import BusinessSubscriptions from "./business/pages/BusinessSubscriptions";
+import BusinessPayments from "./business/pages/BusinessPayments";
+import BusinessNotifications from "./business/pages/BusinessNotifications";
+// Developer portal imports
+import { DeveloperLayout } from "./developer/components/layout/DeveloperLayout";
+import DeveloperDashboard from "./developer/pages/DeveloperDashboard";
+import DeveloperUpdates from "./developer/pages/DeveloperUpdates";
+import DeveloperNotifications from "./developer/pages/DeveloperNotifications";
 
 const queryClient = new QueryClient();
 
@@ -30,11 +56,6 @@ const API_URL = (import.meta as any).env.VITE_API_URL || (import.meta as any).en
 const ADMIN_ROLES = [
   "SuperAdmin",
   "Admin",
-  "Analyst",
-  "Business",
-  "Developer",
-  "Support",
-  "Agronomist",
 ];
 
 function Loading() {
@@ -43,6 +64,56 @@ function Loading() {
       <div className="text-sm text-muted-foreground">Loading…</div>
     </div>
   );
+}
+
+function RequireDeveloper({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  const hasRole = (roles || []).includes("Developer");
+  if (!hasRole) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireBusiness({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  const hasRole = (roles || []).includes("Business");
+  if (!hasRole) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireAnalyst({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  const hasAnalyst = (roles || []).includes("Analyst");
+  if (!hasAnalyst) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireSupport({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  const hasSupport = (roles || []).includes("Support");
+  if (!hasSupport) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireAgronomist({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("token");
+  const { roles, loading } = useRoles();
+  if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <Loading />;
+  const hasAgro = (roles || []).includes("Agronomist");
+  if (!hasAgro) return <Navigate to="/login" replace />;
+  return <>{children}</>;
 }
 
 function useRoles() {
@@ -107,6 +178,11 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
   
+  if (roles.includes("Agronomist")) return <Navigate to="/agronomist/dashboard" replace />;
+  if (roles.includes("Analyst")) return <Navigate to="/analyst/dashboard" replace />;
+  if (roles.includes("Business")) return <Navigate to="/business/dashboard" replace />;
+  if (roles.includes("Developer")) return <Navigate to="/developer/dashboard" replace />;
+  if (roles.includes("Support")) return <Navigate to="/support/dashboard" replace />;
   const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
   return <Navigate to={isAdmin ? "/admin/dashboard" : "/dashboard"} replace />;
 }
@@ -182,6 +258,38 @@ const App = () => (
           <Route path="/admin/notifications" element={<RequireAdmin><AdminLayout><AdminNotifications /></AdminLayout></RequireAdmin>} />
           <Route path="/admin/settings" element={<RequireAdmin><AdminLayout><AdminSettings /></AdminLayout></RequireAdmin>} />
           <Route path="/admin/crops" element={<RequireAdmin><AdminLayout><AdminCrops /></AdminLayout></RequireAdmin>} />
+          {/* Agronomist routes */}
+          <Route path="/agronomist" element={<Navigate to="/agronomist/dashboard" replace />} />
+          <Route path="/agronomist/dashboard" element={<RequireAgronomist><AgronomistLayout><AgronomistDashboard /></AgronomistLayout></RequireAgronomist>} />
+          <Route path="/agronomist/crops" element={<RequireAgronomist><AgronomistLayout><AgronomistCrops /></AgronomistLayout></RequireAgronomist>} />
+          <Route path="/agronomist/notifications" element={<RequireAgronomist><AgronomistLayout><AgronomistNotifications /></AgronomistLayout></RequireAgronomist>} />
+          <Route path="/agronomist/users" element={<RequireAgronomist><AgronomistLayout><AgronomistUsers /></AgronomistLayout></RequireAgronomist>} />
+          <Route path="/agronomist/settings" element={<RequireAgronomist><AgronomistLayout><Settings /></AgronomistLayout></RequireAgronomist>} />
+          {/* Support routes */}
+          <Route path="/support" element={<Navigate to="/support/dashboard" replace />} />
+          <Route path="/support/dashboard" element={<RequireSupport><SupportLayout><SupportDashboard /></SupportLayout></RequireSupport>} />
+          <Route path="/support/notifications" element={<RequireSupport><SupportLayout><SupportNotifications /></SupportLayout></RequireSupport>} />
+          <Route path="/support/users" element={<RequireSupport><SupportLayout><SupportUsers /></SupportLayout></RequireSupport>} />
+          <Route path="/support/settings" element={<RequireSupport><SupportLayout><Settings /></SupportLayout></RequireSupport>} />
+          {/* Analyst routes */}
+          <Route path="/analyst" element={<Navigate to="/analyst/dashboard" replace />} />
+          <Route path="/analyst/dashboard" element={<RequireAnalyst><AnalystLayout><AnalystDashboard /></AnalystLayout></RequireAnalyst>} />
+          <Route path="/analyst/reports" element={<RequireAnalyst><AnalystLayout><AnalystReports /></AnalystLayout></RequireAnalyst>} />
+          <Route path="/analyst/notifications" element={<RequireAnalyst><AnalystLayout><AnalystNotifications /></AnalystLayout></RequireAnalyst>} />
+          <Route path="/analyst/settings" element={<RequireAnalyst><AnalystLayout><Settings /></AnalystLayout></RequireAnalyst>} />
+          {/* Business routes */}
+          <Route path="/business" element={<Navigate to="/business/dashboard" replace />} />
+          <Route path="/business/dashboard" element={<RequireBusiness><BusinessLayout><BusinessDashboard /></BusinessLayout></RequireBusiness>} />
+          <Route path="/business/subscriptions" element={<RequireBusiness><BusinessLayout><BusinessSubscriptions /></BusinessLayout></RequireBusiness>} />
+          <Route path="/business/payments" element={<RequireBusiness><BusinessLayout><BusinessPayments /></BusinessLayout></RequireBusiness>} />
+          <Route path="/business/notifications" element={<RequireBusiness><BusinessLayout><BusinessNotifications /></BusinessLayout></RequireBusiness>} />
+          <Route path="/business/settings" element={<RequireBusiness><BusinessLayout><Settings /></BusinessLayout></RequireBusiness>} />
+          {/* Developer routes */}
+          <Route path="/developer" element={<Navigate to="/developer/dashboard" replace />} />
+          <Route path="/developer/dashboard" element={<RequireDeveloper><DeveloperLayout><DeveloperDashboard /></DeveloperLayout></RequireDeveloper>} />
+          <Route path="/developer/updates" element={<RequireDeveloper><DeveloperLayout><DeveloperUpdates /></DeveloperLayout></RequireDeveloper>} />
+          <Route path="/developer/notifications" element={<RequireDeveloper><DeveloperLayout><DeveloperNotifications /></DeveloperLayout></RequireDeveloper>} />
+          <Route path="/developer/settings" element={<RequireDeveloper><DeveloperLayout><Settings /></DeveloperLayout></RequireDeveloper>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
