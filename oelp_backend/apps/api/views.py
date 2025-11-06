@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import secrets
 from datetime import date, datetime, timedelta
 
@@ -56,7 +57,7 @@ from apps.models_app.field import Field, Device, CropLifecycleDates, FieldIrriga
 from apps.models_app.feature import Feature, FeatureType
 from apps.models_app.plan import Plan
 from apps.models_app.feature_plan import PlanFeature
-from apps.models_app.user_plan import UserPlan, PaymentMethod, Transaction
+from apps.models_app.user_plan import UserPlan, PaymentMethod, Transaction, RefundPolicy
 from apps.models_app.notifications import Notification, SupportRequest
 from apps.models_app.irrigation import IrrigationMethods
 from apps.models_app.models import UserActivity
@@ -268,8 +269,31 @@ class DashboardView(APIView):
             except Exception:
                 pass
 
-        plans = UserPlan.objects.filter(user=user, is_active=True).select_related("plan")
-        current_plan = plans.first()
+        # Get the most recent active plan that has a successful payment transaction
+        # Prioritize paid plans over Free plans
+        from django.db.models import Max
+        successful_txns = Transaction.objects.filter(
+            user=user, 
+            status__in=["success", "paid", "completed"],
+            transaction_type="payment"
+        ).select_related("plan").order_by("-created_at")
+        
+        current_plan = None
+        if successful_txns.exists():
+            # Get the most recent successful transaction
+            latest_txn = successful_txns.first()
+            if latest_txn and latest_txn.plan:
+                # Find the active UserPlan for this paid plan
+                current_plan = UserPlan.objects.filter(
+                    user=user,
+                    plan=latest_txn.plan,
+                    is_active=True
+                ).select_related("plan").order_by("-created_at").first()
+        
+        # Fallback to any active plan if no paid plan found
+        if not current_plan:
+            plans = UserPlan.objects.filter(user=user, is_active=True).select_related("plan")
+            current_plan = plans.order_by("-created_at").first()
         notifications_count = Notification.objects.filter(receiver=user, is_read=False).count()
         recent_practices_qs = (
             FieldIrrigationPractice.objects
@@ -1073,9 +1097,58 @@ class UserPlanViewSet(viewsets.ModelViewSet):
     serializer_class = UserPlanSerializer
 
     def get_queryset(self):
-        return UserPlan.objects.filter(user=self.request.user).select_related("plan")
+        return UserPlan.objects.filter(user=self.request.user).select_related("plan").order_by("-created_at")
+    
+    def list(self, request, *args, **kwargs):
+        # Return the most recent active paid plan (based on successful transactions)
+        queryset = self.get_queryset()
+        successful_txns = Transaction.objects.filter(
+            user=request.user,
+            status__in=["success", "paid", "completed"],
+            transaction_type="payment"
+        ).select_related("plan").order_by("-created_at")
+
+        current_plan = None
+        if successful_txns.exists():
+            latest_txn = successful_txns.first()
+            if latest_txn and latest_txn.plan:
+                current_plan = queryset.filter(
+                    plan=latest_txn.plan,
+                    is_active=True
+                ).first()
+
+        if not current_plan:
+            current_plan = queryset.filter(is_active=True).first()
+
+        if current_plan:
+            data = self.get_serializer(current_plan).data
+            return Response({"results": [data]})
+        else:
+            return Response({"results": []})
 
     def perform_create(self, serializer):
+        # Check if user has an active paid subscription
+        active_paid = UserPlan.objects.filter(
+            user=self.request.user,
+            is_active=True
+        ).exclude(plan__name__iexact="Free").select_related("plan").first()
+        
+        if active_paid:
+            # Check if there's a successful transaction for this plan
+            has_paid = Transaction.objects.filter(
+                user=self.request.user,
+                plan=active_paid.plan,
+                status__in=["success", "paid", "completed"],
+                transaction_type="payment"
+            ).exists()
+            
+            if has_paid and active_paid.expire_at and active_paid.expire_at > timezone.now():
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(
+                    f"You have an active subscription ({active_paid.plan.name}) until {active_paid.expire_at.date()}. "
+                    "Please cancel your current subscription before selecting a new plan."
+                )
+        
         user_plan = serializer.save(user=self.request.user)
         try:
             # Record a simple transaction entry for the selected plan
@@ -1110,6 +1183,131 @@ class UserPlanViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
+    @action(detail=True, methods=["get"], url_path="refund-info")
+    def refund_info(self, request, pk=None):
+        """Get refund information for a subscription"""
+        user_plan = self.get_object()
+        if not user_plan.plan:
+            return Response({"detail": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Find the most recent successful payment transaction for this plan
+        payment_txn = Transaction.objects.filter(
+            user=request.user,
+            plan=user_plan.plan,
+            status__in=["success", "paid", "completed"],
+            transaction_type="payment"
+        ).order_by("-created_at").first()
+        
+        if not payment_txn:
+            return Response({
+                "refund_available": False,
+                "reason": "No payment transaction found for this subscription"
+            })
+        
+        # Get refund policy for this plan type
+        refund_policy = RefundPolicy.objects.filter(plan_type=user_plan.plan.type).first()
+        if not refund_policy:
+            return Response({
+                "refund_available": False,
+                "reason": "No refund policy found for this plan type"
+            })
+        
+        # Calculate days since purchase
+        from django.utils import timezone
+        days_since = (timezone.now() - payment_txn.created_at).days
+        refund_available = days_since <= refund_policy.days_after_purchase
+        
+        # Calculate refund amount
+        refund_amount = 0
+        if refund_available:
+            refund_amount = float(payment_txn.amount) * (float(refund_policy.refund_percentage) / 100)
+        
+        return Response({
+            "refund_available": refund_available,
+            "refund_policy": {
+                "percentage": float(refund_policy.refund_percentage),
+                "days_after_purchase": refund_policy.days_after_purchase,
+            },
+            "payment_info": {
+                "amount": float(payment_txn.amount),
+                "date": payment_txn.created_at.isoformat(),
+                "days_since": days_since,
+            },
+            "refund_amount": round(refund_amount, 2),
+            "reason": f"Refund available: {refund_policy.refund_percentage}% within {refund_policy.days_after_purchase} days" if refund_available else f"Refund period expired ({days_since} days since purchase, policy allows {refund_policy.days_after_purchase} days)"
+        })
+    
+    @action(detail=True, methods=["post"], url_path="downgrade")
+    def downgrade(self, request, pk=None):
+        """Downgrade user plan to Free plan with optional refund"""
+        user_plan = self.get_object()
+        refund_reason = request.data.get("refund_reason", "")
+        request_refund = request.data.get("request_refund", False)
+        
+        try:
+            # Find Free plan
+            free_plan = Plan.objects.filter(name__iexact="Free").first()
+            if not free_plan:
+                return Response({"detail": "Free plan not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            refund_amount = 0
+            refund_txn = None
+            
+            # Process refund if requested
+            if request_refund:
+                from django.utils import timezone
+                payment_txn = Transaction.objects.filter(
+                    user=request.user,
+                    plan=user_plan.plan,
+                    status__in=["success", "paid", "completed"],
+                    transaction_type="payment"
+                ).order_by("-created_at").first()
+                
+                if payment_txn:
+                    refund_policy = RefundPolicy.objects.filter(plan_type=user_plan.plan.type).first()
+                    if refund_policy:
+                        days_since = (timezone.now() - payment_txn.created_at).days
+                        if days_since <= refund_policy.days_after_purchase:
+                            refund_amount = float(payment_txn.amount) * (float(refund_policy.refund_percentage) / 100)
+                            # Create refund transaction
+                            refund_txn = Transaction.objects.create(
+                                user=request.user,
+                                plan=user_plan.plan,
+                                amount=refund_amount,
+                                currency=payment_txn.currency,
+                                status="success",
+                                transaction_type="refund",
+                                refund_reason=refund_reason or "Subscription cancelled by user",
+                            )
+            
+            # Deactivate current plan
+            user_plan.is_active = False
+            user_plan.save(update_fields=["is_active", "updated_at"])
+            
+            # Create Free plan subscription
+            from django.utils import timezone
+            start = timezone.now().date()
+            end = start + timedelta(days=365)
+            expire_at = timezone.now() + timedelta(days=365)
+            
+            UserPlan.objects.update_or_create(
+                user=request.user,
+                plan=free_plan,
+                defaults={"start_date": start, "end_date": end, "is_active": True, "expire_at": expire_at},
+            )
+            
+            response_data = {
+                "detail": "Downgraded to Free plan successfully",
+                "refund_processed": refund_txn is not None,
+            }
+            if refund_txn:
+                response_data["refund_amount"] = float(refund_amount)
+                response_data["refund_transaction"] = TransactionSerializer(refund_txn).data
+            
+            return Response(response_data)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class PaymentMethodViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication]
@@ -1129,14 +1327,46 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return Transaction.objects.filter(user=self.request.user).select_related("plan")
 
-    @action(detail=True, methods=["get"], url_path="invoice")
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="invoice",
+        authentication_classes=[],
+        permission_classes=[],
+    )
     def invoice(self, request, pk=None):
+        # Allow Authorization header OR token query param like exports
+        resolved_user: CustomUser | None = None
+        try:
+            auth_header = request.headers.get("Authorization") or ""
+            token_value = None
+            if auth_header.startswith("Token "):
+                token_value = auth_header.split(" ", 1)[1]
+            token_value = token_value or request.query_params.get("token") or request.query_params.get("access_token")
+            if token_value:
+                tok = UserAuthToken.objects.filter(access_token=token_value).select_related("user").first()
+                if tok:
+                    resolved_user = tok.user
+        except Exception:
+            resolved_user = None
+        if resolved_user is None and not request.user.is_authenticated:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Only allow downloading your own invoice
+        base_qs = Transaction.objects.all()
+        if resolved_user:
+            base_qs = base_qs.filter(user=resolved_user)
+        else:
+            base_qs = base_qs.filter(user=request.user)
+        txn = base_qs.filter(pk=pk).select_related("plan", "user").first()
+        if not txn:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
         # Generate a simple invoice PDF on the fly
         try:
             from reportlab.pdfgen import canvas
         except Exception:
             return Response({"detail": "reportlab not installed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        txn = self.get_object()
         import io
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer)
@@ -1167,17 +1397,104 @@ class RazorpayCreateOrderView(APIView):
     authentication_classes = [TokenAuthentication]
 
     def post(self, request):
-        amount = int(float(request.data.get("amount", 0)) * 100)
+        # Expect plan_id; fallback to explicit amount
+        plan_id = request.data.get("plan_id") or request.data.get("plan")
         currency = request.data.get("currency", "INR")
+        amount_paise = None
+        plan_obj = None
+        try:
+            if plan_id:
+                plan_obj = Plan.objects.filter(pk=plan_id).first()
+                if plan_obj and getattr(plan_obj, "price", None) is not None:
+                    amount_paise = int(float(plan_obj.price) * 100)
+        except Exception:
+            plan_obj = None
+        if amount_paise is None:
+            try:
+                amount_paise = int(float(request.data.get("amount", 0)) * 100)
+            except Exception:
+                amount_paise = 0
         # Lazy import to avoid hard dependency during CI checks
         global razorpay  # type: ignore
         if razorpay is None:
             from importlib import import_module
-
             razorpay = import_module("razorpay")  # type: ignore
         client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))  # type: ignore
-        order = client.order.create({"amount": amount, "currency": currency})
+        order = client.order.create({"amount": amount_paise, "currency": currency})
+        # Pre-create a pending transaction row linked to this order
+        try:
+            Transaction.objects.create(
+                user=request.user,
+                plan=plan_obj,
+                amount=(amount_paise or 0) / 100.0,
+                currency=currency,
+                status="pending",
+                provider_order_id=order.get("id"),
+            )
+        except Exception:
+            pass
         return Response(order)
+
+
+class RazorpayPaymentSuccessView(APIView):
+    """Handle payment success callback from frontend and update user plan"""
+    authentication_classes = [TokenAuthentication]
+
+    def post(self, request):
+        payment_id = request.data.get("razorpay_payment_id")
+        order_id = request.data.get("razorpay_order_id")
+        plan_id = request.data.get("plan_id")
+        
+        if not order_id or not plan_id:
+            return Response({"detail": "order_id and plan_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            plan_obj = Plan.objects.get(pk=plan_id)
+        except Plan.DoesNotExist:
+            return Response({"detail": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Find or create transaction
+        txn = Transaction.objects.filter(provider_order_id=order_id, user=request.user).first()
+        if not txn:
+            # Create transaction if not found (fallback)
+            txn = Transaction.objects.create(
+                user=request.user,
+                plan=plan_obj,
+                amount=plan_obj.price,
+                currency="INR",
+                status="success",
+                provider_order_id=order_id,
+                provider_payment_id=payment_id,
+            )
+        else:
+            # Update transaction
+            txn.status = "success"
+            txn.provider_payment_id = payment_id or txn.provider_payment_id
+            txn.plan = plan_obj
+            txn.save(update_fields=["status", "provider_payment_id", "plan", "updated_at"])
+        
+        # Update or create user plan
+        from django.utils import timezone
+        start = timezone.now().date()
+        end = start + timedelta(days=int(plan_obj.duration or 30))
+        expire_at = timezone.now() + timedelta(days=int(plan_obj.duration or 30))
+        
+        # Deactivate existing active plans
+        UserPlan.objects.filter(user=request.user, is_active=True).update(is_active=False)
+        
+        # Create or update the new plan
+        user_plan, created = UserPlan.objects.update_or_create(
+            user=request.user,
+            plan=plan_obj,
+            defaults={"start_date": start, "end_date": end, "is_active": True, "expire_at": expire_at},
+        )
+        
+        return Response({
+            "status": "success",
+            "message": "Payment successful and plan activated",
+            "user_plan": UserPlanSerializer(user_plan).data,
+            "transaction": TransactionSerializer(txn).data,
+        })
 
 
 class RazorpayWebhookView(APIView):
@@ -1185,8 +1502,108 @@ class RazorpayWebhookView(APIView):
     permission_classes: list = []
 
     def post(self, request):
-        # TODO: verify signature, update transactions, handle refunds/status
+        # Verify signature
+        payload = request.body
+        signature = request.headers.get("X-Razorpay-Signature") or request.headers.get("X-RAZORPAY-SIGNATURE")
+        webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", settings.RAZORPAY_KEY_SECRET)
+        if not signature:
+            return Response({"detail": "Missing signature"}, status=status.HTTP_400_BAD_REQUEST)
+        global razorpay  # type: ignore
+        if razorpay is None:
+            from importlib import import_module
+            razorpay = import_module("razorpay")  # type: ignore
+        try:
+            razorpay.Utility.verify_webhook_signature(payload, signature, webhook_secret)  # type: ignore
+        except Exception:
+            return Response({"detail": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+        event = request.data
+        event_type = event.get("event") or event.get("type")
+        payload_obj = event.get("payload") or {}
+        # Update transaction based on event
+        try:
+            if event_type in ("payment.captured", "order.paid"):
+                # locate by order id
+                order_entity = payload_obj.get("order", {}).get("entity") or {}
+                payment_entity = payload_obj.get("payment", {}).get("entity") or {}
+                provider_order_id = (order_entity.get("id") or payment_entity.get("order_id"))
+                txn = Transaction.objects.filter(provider_order_id=provider_order_id).first()
+                if txn:
+                    txn.status = "success"
+                    txn.provider_payment_id = payment_entity.get("id") or txn.provider_payment_id
+                    txn.save(update_fields=["status", "provider_payment_id", "updated_at"])
+                    # Activate plan for user if attached
+                    if txn.plan and txn.user:
+                        from django.utils import timezone
+                        start = timezone.now().date()
+                        end = start + timedelta(days=int(getattr(txn.plan, "duration", 30) or 30))
+                        expire_at = timezone.now() + timedelta(days=int(getattr(txn.plan, "duration", 30) or 30))
+                        # Deactivate existing active plans
+                        UserPlan.objects.filter(user=txn.user, is_active=True).update(is_active=False)
+                        # Create or update the new plan
+                        UserPlan.objects.update_or_create(
+                            user=txn.user,
+                            plan=txn.plan,
+                            defaults={"start_date": start, "end_date": end, "is_active": True, "expire_at": expire_at},
+                        )
+            elif event_type in ("payment.failed", "order.payment_failed"):
+                order_entity = payload_obj.get("order", {}).get("entity") or {}
+                payment_entity = payload_obj.get("payment", {}).get("entity") or {}
+                provider_order_id = (order_entity.get("id") or payment_entity.get("order_id"))
+                txn = Transaction.objects.filter(provider_order_id=provider_order_id).first()
+                if txn:
+                    txn.status = "failed"
+                    txn.provider_payment_id = payment_entity.get("id") or txn.provider_payment_id
+                    txn.save(update_fields=["status", "provider_payment_id", "updated_at"])
+        except Exception:
+            pass
         return Response({"status": "ok"})
+
+
+class FakeChargeView(APIView):
+    authentication_classes = [TokenAuthentication]
+
+    def post(self, request):
+        plan_id = request.data.get("plan_id") or request.data.get("plan")
+        payment_method_id = request.data.get("payment_method_id")
+        if not plan_id or not payment_method_id:
+            return Response({"detail": "plan_id and payment_method_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            plan = Plan.objects.get(pk=plan_id)
+        except Plan.DoesNotExist:
+            return Response({"detail": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        pm = PaymentMethod.objects.filter(id=payment_method_id, user=request.user).first()
+        if not pm:
+            return Response({"detail": "Payment method not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Create a successful transaction (fake charge)
+        txn = Transaction.objects.create(
+            user=request.user,
+            plan=plan,
+            amount=plan.price,
+            currency="INR",
+            status="success",
+        )
+
+        # Activate the plan for the user
+        from django.utils import timezone
+        start = timezone.now().date()
+        end = start + timedelta(days=int(plan.duration or 30))
+        expire_at = timezone.now() + timedelta(days=int(plan.duration or 30))
+        UserPlan.objects.filter(user=request.user, is_active=True).update(is_active=False)
+        user_plan, _ = UserPlan.objects.update_or_create(
+            user=request.user,
+            plan=plan,
+            defaults={"start_date": start, "end_date": end, "is_active": True, "expire_at": expire_at},
+        )
+
+        return Response({
+            "status": "success",
+            "message": "Charged successfully and plan activated",
+            "user_plan": UserPlanSerializer(user_plan).data,
+            "transaction": TransactionSerializer(txn).data,
+        })
 
 
 class ExportCSVView(APIView):

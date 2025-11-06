@@ -30,6 +30,13 @@ const Subscriptions = () => {
   const [showPlanDialog, setShowPlanDialog] = useState<{ open: boolean; plan: any | null }>({ open: false, plan: null });
   const [card, setCard] = useState({ brand: "Visa", last4: "", exp_month: "", exp_year: "" });
   const [loadingPlan, setLoadingPlan] = useState<number | null>(null);
+  const [showPmDetails, setShowPmDetails] = useState<{ open: boolean; pm: any | null }>({ open: false, pm: null });
+  const [showPmPicker, setShowPmPicker] = useState(false);
+  const [showDowngradeDialog, setShowDowngradeDialog] = useState(false);
+  const [refundInfo, setRefundInfo] = useState<any>(null);
+  const [selectedWhy, setSelectedWhy] = useState("");
+  const [customReason, setCustomReason] = useState("");
+  const [loadingRefund, setLoadingRefund] = useState(false);
 
   const load = async () => {
     try {
@@ -63,17 +70,65 @@ const Subscriptions = () => {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ plan: planId, start_date: today.toISOString().slice(0,10), end_date: end.toISOString().slice(0,10), expire_at: end.toISOString() }),
       });
-      if (res.ok) { toast.success("Plan selected"); setShowPlanDialog({ open: false, plan: null }); load(); } else { const e = await res.json().catch(()=>({})); toast.error(e.detail || "Failed to select plan"); }
+      if (res.ok) { toast.success("Plan selected"); setShowPlanDialog({ open: false, plan: null }); load(); } else { 
+        const e = await res.json().catch(()=>({})); 
+        toast.error(e.detail || e.message || "Failed to select plan");
+        if (e.detail && e.detail.includes("active subscription")) {
+          load(); // Reload to refresh UI
+        }
+      }
     } catch { toast.error("Failed to select plan"); } finally { setLoadingPlan(null); }
   };
 
-  const canDowngrade = userPlan && (userPlan.plan_name || "") !== "Free";
-  const handleDowngrade = async () => {
+  const canDowngrade = userPlan && (userPlan.plan_name || "").toLowerCase() !== "free";
+  const isEnterprise = (userPlan?.plan_name || "").toLowerCase() === "enterprise";
+  const isFreePlan = (planName: string) => planName.toLowerCase() === "free";
+  const hasActivePaidPlan = userPlan && !isFreePlan(userPlan.plan_name) && userPlan.is_active;
+  
+  const loadRefundInfo = async () => {
+    if (!userPlan || !canDowngrade) return;
+    try {
+      const res = await fetch(`${API_URL}/subscriptions/user/${userPlan.id}/refund-info/`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setRefundInfo(data);
+      }
+    } catch {}
+  };
+  
+  const handleDowngradeClick = async () => {
+    if (!userPlan) return;
+    await loadRefundInfo();
+    setShowDowngradeDialog(true);
+  };
+  
+  const handleDowngrade = async (requestRefund: boolean) => {
     if (!userPlan) return;
     try {
-      const res = await fetch(`${API_URL}/subscriptions/user/${userPlan.id}/downgrade/`, { method: 'POST', headers: authHeaders() });
-      if (res.ok) { toast.success('Downgraded to Free'); load(); } else { toast.error('Failed to downgrade'); }
-    } catch { toast.error('Failed to downgrade'); }
+      setLoadingRefund(true);
+      const reason = selectedWhy === "other" ? customReason : selectedWhy;
+      const res = await fetch(`${API_URL}/subscriptions/user/${userPlan.id}/downgrade/`, {
+        method: 'POST',
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ request_refund: requestRefund, refund_reason: reason })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.refund_processed && data.refund_amount) {
+          toast.success(`Downgraded to Free. Refund of ₹${data.refund_amount} processed.`);
+        } else {
+          toast.success('Downgraded to Free');
+        }
+        setShowDowngradeDialog(false);
+        load();
+      } else {
+        toast.error(data.detail || 'Failed to downgrade');
+      }
+    } catch (e: any) {
+      toast.error('Failed to downgrade: ' + (e.message || 'Unknown error'));
+    } finally {
+      setLoadingRefund(false);
+    }
   };
 
   const addPaymentMethod = async () => {
@@ -104,15 +159,17 @@ const Subscriptions = () => {
               <CardDescription>{currentPlanName === "Free" ? "No renewal required" : "Active"}</CardDescription>
             </div>
             <div className="text-right">
-              <p className="text-3xl font-bold text-primary">{userPlan?.plan?.price ? `₹${userPlan.plan.price}` : "₹0.00"}<span className="text-sm text-muted-foreground">/period</span></p>
+              <p className="text-3xl font-bold text-primary">{userPlan?.plan_details?.price || userPlan?.plan?.price ? `₹${userPlan.plan_details?.price || userPlan.plan?.price}` : "₹0.00"}<span className="text-sm text-muted-foreground">/period</span></p>
               <p className="text-sm text-muted-foreground">{userPlan?.end_date ? `Ends ${userPlan.end_date}` : "—"}</p>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
-            <Button onClick={() => setShowPlanDialog({ open: true, plan: null })}>Upgrade Plan</Button>
-            <Button variant="outline" onClick={handleDowngrade} disabled={!canDowngrade}>Downgrade Plan</Button>
+            <Button onClick={() => setShowPlanDialog({ open: true, plan: null })} disabled={isEnterprise || hasActivePaidPlan}>
+              {hasActivePaidPlan ? "Cancel Current Plan First" : "Upgrade Plan"}
+            </Button>
+            <Button variant="outline" onClick={handleDowngradeClick} disabled={!canDowngrade}>Downgrade Plan</Button>
           </div>
         </CardContent>
       </Card>
@@ -139,6 +196,10 @@ const Subscriptions = () => {
                 </div>
                 {userPlan?.plan === plan.id ? (
                   <Button className="w-full" disabled>Current Plan</Button>
+                ) : isFreePlan(plan.name) ? (
+                  <Button className="w-full" disabled>Free Plan</Button>
+                ) : hasActivePaidPlan ? (
+                  <Button className="w-full" disabled title="Cancel current subscription first">Not Available</Button>
                 ) : (
                   <Button className="w-full" onClick={() => setShowPlanDialog({ open: true, plan })}>
                     View Details
@@ -175,6 +236,7 @@ const Subscriptions = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setShowPmDetails({ open: true, pm })}>View</Button>
                 {pm.is_primary && <Badge variant="secondary">Primary</Badge>}
                 <Button variant="outline" size="sm" onClick={async () => {
                   const res = await fetch(`${API_URL}/payment-methods/${pm.id}/`, { method: 'DELETE', headers: { ...authHeaders() } });
@@ -216,7 +278,7 @@ const Subscriptions = () => {
                     <Badge variant="secondary">{invoice.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="sm" onClick={() => { window.open(`${API_URL}/transactions/${invoice.id}/invoice/`, "_blank"); }}>
+                  <Button variant="ghost" size="sm" onClick={() => { const token = localStorage.getItem('token'); const url = `${API_URL}/transactions/${invoice.id}/invoice/${token ? `?token=${token}` : ''}`; window.open(url, "_blank"); }}>
                       <Download className="mr-2 h-4 w-4" />
                       Download
                     </Button>
@@ -267,7 +329,7 @@ const Subscriptions = () => {
           </DialogHeader>
           {!showPlanDialog.plan && (
             <div className="space-y-3">
-              {plans.map((p) => (
+              {plans.filter((p) => !isFreePlan(p.name)).map((p) => (
                 <div key={p.id} className="flex items-center justify-between p-3 border rounded">
                   <div>
                     <p className="font-medium">{p.name}</p>
@@ -293,12 +355,291 @@ const Subscriptions = () => {
                 </ul>
               </div>
               <div className="flex justify-end">
-                <Button onClick={() => selectPlan(showPlanDialog.plan.id)} disabled={loadingPlan === showPlanDialog.plan.id}>
-                  {loadingPlan === showPlanDialog.plan.id ? 'Processing...' : 'Make Payment'}
-                </Button>
+                {isFreePlan(showPlanDialog.plan.name) ? (
+                  <Button disabled>Free Plan - No Payment Required</Button>
+                ) : (
+                  <Button onClick={async () => {
+                    try {
+                      setLoadingPlan(showPlanDialog.plan.id);
+                      // Prefer saved card (fake charge); if none, fallback to Razorpay
+                      if (paymentMethods.length > 0) {
+                        setShowPmPicker(true);
+                      } else {
+                        // Fallback to Razorpay flow
+                        const orderRes = await fetch(`${API_URL}/subscriptions/razorpay/order/`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                          body: JSON.stringify({ plan_id: showPlanDialog.plan.id, currency: 'INR' })
+                        });
+                        const order = await orderRes.json();
+                        if (!orderRes.ok) throw new Error(order.detail || 'Failed to create order');
+                        if (!(window as any).Razorpay) {
+                          await new Promise((resolve, reject) => {
+                            const s = document.createElement('script');
+                            s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                            s.onload = resolve;
+                            s.onerror = () => reject(new Error('Failed to load Razorpay'));
+                            document.body.appendChild(s);
+                          });
+                        }
+                        const key = (import.meta as any).env.VITE_RAZORPAY_KEY_ID || (import.meta as any).env.REACT_APP_RAZORPAY_KEY_ID;
+                        const options: any = {
+                          key,
+                          amount: order.amount,
+                          currency: order.currency,
+                          name: 'AgriSpark',
+                          description: showPlanDialog.plan.name,
+                          order_id: order.id,
+                          prefill: {},
+                          theme: { color: '#0ea5e9' },
+                          handler: async function (response: any) {
+                            try {
+                              const successRes = await fetch(`${API_URL}/subscriptions/razorpay/success/`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                                body: JSON.stringify({
+                                  razorpay_payment_id: response.razorpay_payment_id,
+                                  razorpay_order_id: response.razorpay_order_id,
+                                  razorpay_signature: response.razorpay_signature,
+                                  plan_id: showPlanDialog.plan.id
+                                })
+                              });
+                              const successData = await successRes.json();
+                              if (successRes.ok) {
+                                toast.success('Payment successful! Plan activated.');
+                                setShowPlanDialog({ open: false, plan: null });
+                                load();
+                              } else {
+                                toast.error(successData.detail || 'Payment verification failed');
+                              }
+                            } catch (error: any) {
+                              toast.error('Failed to verify payment: ' + (error.message || 'Unknown error'));
+                            }
+                          },
+                          modal: {
+                            ondismiss: function() {
+                              setLoadingPlan(null);
+                            }
+                          }
+                        };
+                        const rzp = new (window as any).Razorpay(options);
+                        rzp.on('payment.failed', function (response: any) {
+                          toast.error('Payment failed: ' + (response.error?.description || 'Unknown error'));
+                          setLoadingPlan(null);
+                        });
+                        rzp.open();
+                      }
+                  } catch (e: any) {
+                    toast.error(e.message || 'Payment failed to initialize');
+                    setLoadingPlan(null);
+                  }
+                  }} disabled={loadingPlan === showPlanDialog.plan.id || hasActivePaidPlan}>
+                    {hasActivePaidPlan ? "Cancel Current Plan First" : loadingPlan === showPlanDialog.plan.id ? 'Processing...' : 'Make Payment'}
+                  </Button>
+                )}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Method Picker (choose saved card) */}
+      <Dialog open={showPmPicker} onOpenChange={(open) => { setShowPmPicker(open); if (!open) setLoadingPlan(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select a saved card</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {paymentMethods.map((pm) => (
+              <div key={pm.id} className="flex items-center justify-between p-3 border rounded">
+                <div>
+                  <p className="font-medium">{pm.brand} •••• {pm.last4}</p>
+                  <p className="text-xs text-muted-foreground">Exp {pm.exp_month}/{pm.exp_year} {pm.is_primary ? '(Primary)' : ''}</p>
+                </div>
+                <Button size="sm" onClick={async () => {
+                  try {
+                    // Create Razorpay order
+                    const orderRes = await fetch(`${API_URL}/subscriptions/razorpay/order/`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                      body: JSON.stringify({ plan_id: showPlanDialog.plan.id, currency: 'INR' })
+                    });
+                    const order = await orderRes.json();
+                    if (!orderRes.ok) throw new Error(order.detail || 'Failed to create order');
+
+                    if (!(window as any).Razorpay) {
+                      await new Promise((resolve, reject) => {
+                        const s = document.createElement('script');
+                        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                        s.onload = resolve;
+                        s.onerror = () => reject(new Error('Failed to load Razorpay'));
+                        document.body.appendChild(s);
+                      });
+                    }
+
+                    const key = (import.meta as any).env.VITE_RAZORPAY_KEY_ID || (import.meta as any).env.REACT_APP_RAZORPAY_KEY_ID;
+                    const rzp = new (window as any).Razorpay({
+                      key,
+                      amount: order.amount,
+                      currency: order.currency,
+                      name: 'AgriSpark',
+                      description: `${showPlanDialog.plan.name} - Paying with ${pm.brand} •••• ${pm.last4}`,
+                      order_id: order.id,
+                      prefill: {},
+                      notes: { payment_method_id: String(pm.id) },
+                      theme: { color: '#0ea5e9' },
+                      handler: async function (response: any) {
+                        try {
+                          const successRes = await fetch(`${API_URL}/subscriptions/razorpay/success/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                            body: JSON.stringify({
+                              razorpay_payment_id: response.razorpay_payment_id,
+                              razorpay_order_id: response.razorpay_order_id,
+                              razorpay_signature: response.razorpay_signature,
+                              plan_id: showPlanDialog.plan.id
+                            })
+                          });
+                          const successData = await successRes.json();
+                          if (successRes.ok) {
+                            toast.success('Payment successful! Plan activated.');
+                            setShowPmPicker(false);
+                            setShowPlanDialog({ open: false, plan: null });
+                            setLoadingPlan(null);
+                            load();
+                          } else {
+                            toast.error(successData.detail || 'Payment verification failed');
+                            setLoadingPlan(null);
+                          }
+                        } catch (error: any) {
+                          toast.error('Failed to verify payment: ' + (error.message || 'Unknown error'));
+                          setLoadingPlan(null);
+                        }
+                      },
+                      modal: {
+                        ondismiss: function() {
+                          setLoadingPlan(null);
+                        }
+                      }
+                    });
+                    rzp.on('payment.failed', function (response: any) {
+                      toast.error('Payment failed: ' + (response.error?.description || 'Unknown error'));
+                      setLoadingPlan(null);
+                    });
+                    rzp.open();
+                  } catch (err: any) {
+                    toast.error(err.message || 'Failed to start payment');
+                    setLoadingPlan(null);
+                  }
+                }}>Pay</Button>
+              </div>
+            ))}
+            {paymentMethods.length === 0 && (
+              <p className="text-sm text-muted-foreground">No saved cards. Please add a payment method first.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Method Details Dialog */}
+      <Dialog open={showPmDetails.open} onOpenChange={(open) => setShowPmDetails({ open, pm: open ? showPmDetails.pm : null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Card details</DialogTitle>
+          </DialogHeader>
+          {showPmDetails.pm && (
+            <div className="space-y-2">
+              <p className="text-sm">Brand: {showPmDetails.pm.brand}</p>
+              <p className="text-sm">Last 4: {showPmDetails.pm.last4}</p>
+              <p className="text-sm">Expires: {showPmDetails.pm.exp_month}/{showPmDetails.pm.exp_year}</p>
+              <p className="text-sm">Primary: {showPmDetails.pm.is_primary ? 'Yes' : 'No'}</p>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setShowPmDetails({ open: false, pm: null })}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Downgrade Dialog with FAQ and Refund */}
+      <Dialog open={showDowngradeDialog} onOpenChange={(open) => { setShowDowngradeDialog(open); if (!open) { setSelectedWhy(""); setCustomReason(""); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Why are you downgrading?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Select a reason</Label>
+              <div className="space-y-2">
+                {[
+                  "Too expensive",
+                  "Features not needed",
+                  "Switching to another service",
+                  "Temporary pause",
+                  "Other"
+                ].map((reason) => (
+                  <div key={reason} className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id={`reason-${reason}`}
+                      name="downgrade-reason"
+                      value={reason === "Other" ? "other" : reason.toLowerCase()}
+                      checked={selectedWhy === (reason === "Other" ? "other" : reason.toLowerCase())}
+                      onChange={(e) => setSelectedWhy(e.target.value)}
+                      className="h-4 w-4"
+                    />
+                    <Label htmlFor={`reason-${reason}`} className="cursor-pointer font-normal">{reason}</Label>
+                  </div>
+                ))}
+              </div>
+              {selectedWhy === "other" && (
+                <Input
+                  placeholder="Please specify..."
+                  value={customReason}
+                  onChange={(e) => setCustomReason(e.target.value)}
+                  className="mt-2"
+                />
+              )}
+            </div>
+
+            {refundInfo && (
+              <div className="p-4 border rounded-lg bg-muted/50">
+                <h4 className="font-semibold mb-2">Refund Information</h4>
+                <div className="space-y-1 text-sm">
+                  <p>Original Payment: ₹{refundInfo.payment_info?.amount || 0}</p>
+                  <p>Days Since Purchase: {refundInfo.payment_info?.days_since || 0}</p>
+                  <p>Refund Policy: {refundInfo.refund_policy?.percentage || 0}% refund within {refundInfo.refund_policy?.days_after_purchase || 0} days</p>
+                  {refundInfo.refund_available ? (
+                    <p className="text-green-600 font-semibold">Refund Amount: ₹{refundInfo.refund_amount || 0}</p>
+                  ) : (
+                    <p className="text-muted-foreground">{refundInfo.reason}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowDowngradeDialog(false)} disabled={loadingRefund}>
+                Cancel
+              </Button>
+              {refundInfo?.refund_available && (
+                <Button
+                  onClick={() => handleDowngrade(true)}
+                  disabled={!selectedWhy || loadingRefund}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {loadingRefund ? "Processing..." : `Downgrade & Get ₹${refundInfo.refund_amount} Refund`}
+                </Button>
+              )}
+              <Button
+                onClick={() => handleDowngrade(false)}
+                disabled={!selectedWhy || loadingRefund}
+                variant="destructive"
+              >
+                {loadingRefund ? "Processing..." : "Downgrade Without Refund"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

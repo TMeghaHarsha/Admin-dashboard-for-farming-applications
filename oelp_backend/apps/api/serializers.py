@@ -372,10 +372,11 @@ class PlanFeatureSerializer(serializers.ModelSerializer):
 
 class UserPlanSerializer(serializers.ModelSerializer):
     plan_name = serializers.CharField(source="plan.name", read_only=True)
+    plan_details = PlanSerializer(source="plan", read_only=True)
 
     class Meta:
         model = UserPlan
-        fields = ("id", "user", "plan", "plan_name", "start_date", "end_date", "expire_at", "is_active")
+        fields = ("id", "user", "plan", "plan_name", "plan_details", "start_date", "end_date", "expire_at", "is_active")
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -425,6 +426,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             "amount",
             "currency",
             "status",
+            "transaction_type",
+            "refund_reason",
             "invoice_pdf",
             "created_at",
         )

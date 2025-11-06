@@ -1,14 +1,12 @@
-
 services:
-
   # ----------------------------
-  # 3. Django Backend API
+  # Django Backend API
   # ----------------------------
   - type: web
     name: oelp-backend
     env: python
     buildCommand: pip install -r requirements.txt && python oelp_backend/manage.py collectstatic --noinput
-    startCommand: bash -c "python oelp_backend/manage.py makemigrations --noinput && python oelp_backend/manage.py migrate --noinput --fake-initial && gunicorn --chdir oelp_backend oelp_backend.wsgi:application --bind 0.0.0.0:$PORT"
+    startCommand: bash -c "python oelp_backend/manage.py makemigrations --noinput && python oelp_backend/manage.py migrate --noinput && gunicorn --chdir oelp_backend oelp_backend.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -24,10 +22,15 @@ services:
         sync: false
       - key: CELERY_RESULT_BACKEND
         sync: false
-    # preDeployCommand is not supported on free tier; handled via build/start commands
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
 
   # ----------------------------
-  # 4. Frontend React App
+  # Frontend React App
   # ----------------------------
   - type: web
     name: oelp-frontend
@@ -38,35 +41,5 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://oelp-backend.onrender.com/api
-    routes:
-      # Single Page App routing: route all paths to index.html
-      - type: rewrite
-        source: /dashboard
-        destination: /index.html
-      - type: rewrite
-        source: /crops
-        destination: /index.html
-      - type: rewrite
-        source: /fields
-        destination: /index.html
-      - type: rewrite
-        source: /subscriptions
-        destination: /index.html
-      - type: rewrite
-        source: /practices
-        destination: /index.html
-      - type: rewrite
-        source: /reports
-        destination: /index.html
-      - type: rewrite
-        source: /settings
-        destination: /index.html
-      - type: rewrite
-        source: /login
-        destination: /index.html
-      - type: rewrite
-        source: /
-        destination: /index.html
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      - key: VITE_RAZORPAY_KEY_ID
+        sync: false
